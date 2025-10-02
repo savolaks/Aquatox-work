@@ -1,0 +1,17 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+
+# Virtual env
+.venv/
+venv/
+
+# PyCharm
+.idea/
+
+# Test & build artifacts
+*.egg-info/
+dist/
+build/
+.coverage
+.pytest_cache/
