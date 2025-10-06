@@ -1,0 +1,27 @@
+{
+  "environment": {
+    "volume": 1000.0,
+    "area": 1000.0,
+    "depth_mean": 5.4,
+    "depth_max": 25.0,
+    "inflow_series": [
+      ["1992-01-01", 10.0],
+      ["1992-01-02", 10.0],
+      ["1992-01-03", 10.0]
+    ],
+    "outflow_series": [
+      ["1992-01-01", 5.0],
+      ["1992-01-02", 5.0],
+      ["1992-01-03", 5.0]
+    ]
+  },
+  "state_variables": [
+    {
+      "type": "nutrient",
+      "name": "Nitrate",
+      "value": 0.4,
+      "units": "mg/L",
+      "form": "NO3"
+    }
+  ]
+}

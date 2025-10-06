@@ -1,6 +1,7 @@
 # tests/test_stage1.py
 import math
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -43,7 +44,8 @@ def test_environment_water_balance_updates_volume():
     assert sim.env.volume == pytest.approx(1005.0)
 
 def test_scenarioio_minimal_load_and_run_stable():
-    sim = Simulation.load_scenario("dummy-path")
+    scenario_path = Path(__file__).parent / "data" / "pyhajarvi_stub.json"
+    sim = Simulation.load_scenario(str(scenario_path))
     # run two days
     end = min(sim.env.inflow_series.keys()) + timedelta(days=2)
     sim.run(time_end=end, dt_days=1.0)
