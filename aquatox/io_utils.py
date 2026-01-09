@@ -15,8 +15,8 @@ class ScenarioIO:
         """
         # A two-day time axis for flows
         t0 = datetime(1992, 1, 1)
-        inflow_series = {t0 + timedelta(days=i): 10.0 for i in range(3)}   # m^3/day
-        outflow_series = {t0 + timedelta(days=i): 5.0 for i in range(3)}   # m^3/day
+        inflow_series = {t0 + timedelta(days=i): 10.0 for i in range(10)}   # m^3/day
+        outflow_series = {t0 + timedelta(days=i): 10.0 for i in range(10)}   # m^3/day
 
         env = Environment(
             volume=1_000.0,   # m^3
