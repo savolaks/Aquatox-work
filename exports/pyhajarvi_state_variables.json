@@ -1,0 +1,212 @@
+[
+  {
+    "name": "Total Ammonia as N",
+    "initial": 0.005,
+    "units": "mg/L",
+    "mapped_class": "Nutrient"
+  },
+  {
+    "name": "Nitrate as N",
+    "initial": 0.4,
+    "units": "mg/L",
+    "mapped_class": "Nutrient"
+  },
+  {
+    "name": "Total Soluble P",
+    "initial": 0.015,
+    "units": "mg/L",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Carbon dioxide",
+    "initial": 0.77,
+    "units": "mg/L",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Oxygen",
+    "initial": 6.0,
+    "units": "mg/L",
+    "mapped_class": "Nutrient"
+  },
+  {
+    "name": "Refrac. sed. detritus",
+    "initial": 0.0,
+    "units": "g/m2 dry",
+    "mapped_class": "Detritus"
+  },
+  {
+    "name": "Labile sed. detritus",
+    "initial": 0.0,
+    "units": "g/m2 dry",
+    "mapped_class": "Detritus"
+  },
+  {
+    "name": "Susp. and dissolved detritus",
+    "initial": 0.24,
+    "units": "mg/L dry",
+    "mapped_class": "Detritus"
+  },
+  {
+    "name": "Undisplayed",
+    "initial": 0.16,
+    "units": "mg/L dry",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Undisplayed",
+    "initial": 0.06,
+    "units": "mg/L dry",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Undisplayed",
+    "initial": 0.04,
+    "units": "mg/L dry",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Diatoms1: [Cyclotella nana]",
+    "initial": 0.000517088547317987,
+    "units": "mg/L dry",
+    "mapped_class": "Plant"
+  },
+  {
+    "name": "Greens1: [Phyto Greens]",
+    "initial": 9.95862260221194e-08,
+    "units": "mg/L dry",
+    "mapped_class": "Plant"
+  },
+  {
+    "name": "Cyanobacteria1: [Phyt, Blue-Greens]",
+    "initial": 1.78205315877645e-08,
+    "units": "mg/L dry",
+    "mapped_class": "Plant"
+  },
+  {
+    "name": "OtherAlg1: [Dinoflagellate]",
+    "initial": 7.31336393850407e-08,
+    "units": "mg/L dry",
+    "mapped_class": "Plant"
+  },
+  {
+    "name": "OtherAlg2: [Cryptomonad]",
+    "initial": 4.84510834061918e-07,
+    "units": "mg/L dry",
+    "mapped_class": "Plant"
+  },
+  {
+    "name": "SuspFeeder3: [Rotifer, Keratella]",
+    "initial": 1.74994476370295e-08,
+    "units": "mg/L dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "SuspFeeder5: [Daphnia]",
+    "initial": 0.00669360830909922,
+    "units": "mg/L dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "SuspFeeder6: [Cladoceran]",
+    "initial": 8.73854367247648e-06,
+    "units": "mg/L dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "DepFeeder1: [Chironomid]",
+    "initial": 0.362326422319844,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "DepFeeder2: [Oligochaete]",
+    "initial": 0.000231729407809568,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "PredInvt1: [Predatory Zooplank.]",
+    "initial": 4.20552394547759e-07,
+    "units": "mg/L dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "SmGameFish1: [Yellow Perch, Lg]",
+    "initial": 0.000239397986950491,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "SmGameFish2: [Smelt]",
+    "initial": 1.18241033041732,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "LgGameFish1: [Lake Trout]",
+    "initial": 0.000819450710040111,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "LgGameFish2: [Whitefish adult]",
+    "initial": 0.456280349410296,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "LgGameFish3: [Northern Pike]",
+    "initial": 0.002,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "Multi.Age-Class Fish: [Vendace]",
+    "initial": 2.69971083e-18,
+    "units": "g/m2 dry",
+    "mapped_class": "Animal"
+  },
+  {
+    "name": "Undisplayed",
+    "initial": 0.0,
+    "units": "g/m2 dry",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Undisplayed",
+    "initial": 0.0,
+    "units": "g/m2 dry",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Water Volume",
+    "initial": 831600000.0,
+    "units": "cu.m",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Temperature",
+    "initial": 1.2,
+    "units": "deg. C",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Wind Loading",
+    "initial": 3.0,
+    "units": "m/s",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "Light",
+    "initial": 23.0,
+    "units": "Ly/d",
+    "mapped_class": "StateVariable"
+  },
+  {
+    "name": "pH",
+    "initial": 7.2,
+    "units": "pH",
+    "mapped_class": "StateVariable"
+  }
+]

@@ -1,0 +1,36 @@
+name,initial,units,mapped_class
+Total Ammonia as N,0.005,mg/L,Nutrient
+Nitrate as N,0.4,mg/L,Nutrient
+Total Soluble P,0.015,mg/L,StateVariable
+Carbon dioxide,0.77,mg/L,StateVariable
+Oxygen,6.0,mg/L,Nutrient
+Refrac. sed. detritus,0.0,g/m2 dry,Detritus
+Labile sed. detritus,0.0,g/m2 dry,Detritus
+Susp. and dissolved detritus,0.24,mg/L dry,Detritus
+Undisplayed,0.16,mg/L dry,StateVariable
+Undisplayed,0.06,mg/L dry,StateVariable
+Undisplayed,0.04,mg/L dry,StateVariable
+Diatoms1: [Cyclotella nana],0.000517088547317987,mg/L dry,Plant
+Greens1: [Phyto Greens],9.95862260221194e-08,mg/L dry,Plant
+"Cyanobacteria1: [Phyt, Blue-Greens]",1.78205315877645e-08,mg/L dry,Plant
+OtherAlg1: [Dinoflagellate],7.31336393850407e-08,mg/L dry,Plant
+OtherAlg2: [Cryptomonad],4.84510834061918e-07,mg/L dry,Plant
+"SuspFeeder3: [Rotifer, Keratella]",1.74994476370295e-08,mg/L dry,Animal
+SuspFeeder5: [Daphnia],0.00669360830909922,mg/L dry,Animal
+SuspFeeder6: [Cladoceran],8.73854367247648e-06,mg/L dry,Animal
+DepFeeder1: [Chironomid],0.362326422319844,g/m2 dry,Animal
+DepFeeder2: [Oligochaete],0.000231729407809568,g/m2 dry,Animal
+PredInvt1: [Predatory Zooplank.],4.20552394547759e-07,mg/L dry,Animal
+"SmGameFish1: [Yellow Perch, Lg]",0.000239397986950491,g/m2 dry,Animal
+SmGameFish2: [Smelt],1.18241033041732,g/m2 dry,Animal
+LgGameFish1: [Lake Trout],0.000819450710040111,g/m2 dry,Animal
+LgGameFish2: [Whitefish adult],0.456280349410296,g/m2 dry,Animal
+LgGameFish3: [Northern Pike],0.002,g/m2 dry,Animal
+Multi.Age-Class Fish: [Vendace],2.69971083e-18,g/m2 dry,Animal
+Undisplayed,0.0,g/m2 dry,StateVariable
+Undisplayed,0.0,g/m2 dry,StateVariable
+Water Volume,831600000.0,cu.m,StateVariable
+Temperature,1.2,deg. C,StateVariable
+Wind Loading,3.0,m/s,StateVariable
+Light,23.0,Ly/d,StateVariable
+pH,7.2,pH,StateVariable
