@@ -18,6 +18,7 @@ class Environment:
     depth_max: float              # m
     inflow_series: Dict[Date, float]   # m^3/day
     outflow_series: Dict[Date, float]  # m^3/day
+    food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
         return self._get_series_value(self.inflow_series, t)
@@ -129,8 +130,15 @@ class ODESolver:
         if self.method != "Euler":
             raise NotImplementedError("Only Euler is implemented in Stage-1.")
 
+        food_web_rates: Dict[str, float] = {}
+        if env.food_web is not None:
+            food_web_rates = env.food_web.compute_rates(t, dt_days, env, state_vars)
+
         # Compute all rates with the current state (avoid in-step side effects)
-        rates = [sv.rate(t, dt_days, env, state_vars) for sv in state_vars]
+        rates = [
+            sv.rate(t, dt_days, env, state_vars) + food_web_rates.get(sv.name, 0.0)
+            for sv in state_vars
+        ]
 
         # Euler step: x_{n+1} = x_n + dt * f(x_n, t)
         for sv, r in zip(state_vars, rates):
@@ -147,10 +155,10 @@ class Simulation:
     _outputs: List[Tuple[Date, Dict[str, float]]] = field(default_factory=list)
 
     @classmethod
-    def load_scenario(cls, file_path: str) -> "Simulation":
+    def load_scenario(cls, file_path: str, food_web_path: str | None = None) -> "Simulation":
         # Delegated in io_utils.ScenarioIO; left here to match UML signature
         from .io_utils import ScenarioIO
-        env, svs = ScenarioIO.load_initial_conditions(file_path)
+        env, svs = ScenarioIO.load_initial_conditions(file_path, food_web_path=food_web_path)
         solver = ODESolver(method="Euler")
         return cls(env=env, state_vars=svs, solver=solver)
 

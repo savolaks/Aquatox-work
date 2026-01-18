@@ -11,7 +11,10 @@ from .state import StateVariable, Nutrient, Detritus, Plant, Animal, Biota
 
 class ScenarioIO:
     @staticmethod
-    def load_initial_conditions(file: str) -> tuple[Environment, list[StateVariable]]:
+    def load_initial_conditions(
+        file: str,
+        food_web_path: str | None = None,
+    ) -> tuple[Environment, list[StateVariable]]:
         """Load a scenario file, prompting for any missing data."""
         path = Path(file)
         text = ""
@@ -22,6 +25,23 @@ class ScenarioIO:
         state_vars = ScenarioIO._parse_state_variables(text)
         if not state_vars:
             state_vars = ScenarioIO._prompt_state_variables()
+
+        food_web = ScenarioIO._parse_foodweb_from_scenario(text)
+        if food_web is None:
+            resolved_food_web = None
+            if food_web_path:
+                resolved_food_web = Path(food_web_path)
+            else:
+                default_path = Path.cwd() / "AQ_Species_Models.cn"
+                if default_path.exists():
+                    resolved_food_web = default_path
+
+            if resolved_food_web and resolved_food_web.exists():
+                from .foodweb import FoodWeb
+
+                food_web = FoodWeb.from_interspecies_csv(str(resolved_food_web))
+
+        env.food_web = food_web
         return env, state_vars
 
     @staticmethod
@@ -220,6 +240,117 @@ class ScenarioIO:
         return records
 
     @staticmethod
+    def _parse_foodweb_from_scenario(text: str):
+        state_index: Dict[int, str] = {}
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            idx = ScenarioIO._find_int(block, r'"nState":\s*(\d+)')
+            if name and idx is not None:
+                state_index[idx] = name
+
+        interactions = []
+        for animal_block in ScenarioIO._extract_blocks(text, "TAnimal"):
+            predator_name = ScenarioIO._find_str(animal_block, r'"PName\^":\s*"([^"]+)"')
+            if not predator_name:
+                continue
+            troph_block = ScenarioIO._extract_named_block(animal_block, "TrophInt")
+            if troph_block is None:
+                continue
+            pref_map, ecoeff_map = ScenarioIO._parse_trophint_block(troph_block)
+            for idx, pref in pref_map.items():
+                ecoeff = ecoeff_map.get(idx)
+                if (pref is None or pref <= 0.0) and (ecoeff is None or ecoeff <= 0.0):
+                    continue
+                prey_name = state_index.get(idx)
+                if not prey_name:
+                    continue
+                interactions.append(
+                    {
+                        "predator": predator_name,
+                        "prey": prey_name,
+                        "pref": pref,
+                        "egestion": ecoeff,
+                    }
+                )
+
+        if not interactions:
+            return None
+
+        from .foodweb import FoodWeb, FoodWebInteraction
+
+        return FoodWeb(
+            interactions=[
+                FoodWebInteraction(
+                    predator=item["predator"],
+                    prey=item["prey"],
+                    observations=0,
+                    params=[],
+                    diet_percent=item["pref"],
+                    habitat_code=None,
+                    egestion_coeff=item["egestion"],
+                )
+                for item in interactions
+            ],
+            preference_source="diet_percent",
+        )
+
+    @staticmethod
+    def _extract_blocks(text: str, marker: str) -> list[str]:
+        blocks: list[str] = []
+        lines = text.splitlines()
+        in_block = False
+        depth = 0
+        buffer: list[str] = []
+        tag = f'"{marker}": {{'
+        for line in lines:
+            if not in_block and tag in line:
+                in_block = True
+                depth = 0
+                buffer = [line]
+                depth += line.count("{") - line.count("}")
+                continue
+            if in_block:
+                buffer.append(line)
+                depth += line.count("{") - line.count("}")
+                if depth <= 0:
+                    blocks.append("\n".join(buffer))
+                    in_block = False
+        return blocks
+
+    @staticmethod
+    def _extract_named_block(text: str, marker: str) -> str | None:
+        lines = text.splitlines()
+        in_block = False
+        depth = 0
+        buffer: list[str] = []
+        tag = f'"{marker}": {{'
+        for line in lines:
+            if not in_block and tag in line:
+                in_block = True
+                depth = 0
+                buffer = [line]
+                depth += line.count("{") - line.count("}")
+                continue
+            if in_block:
+                buffer.append(line)
+                depth += line.count("{") - line.count("}")
+                if depth <= 0:
+                    return "\n".join(buffer)
+        return None
+
+    @staticmethod
+    def _parse_trophint_block(block: str) -> tuple[Dict[int, float], Dict[int, float]]:
+        pref_map: Dict[int, float] = {}
+        ecoeff_map: Dict[int, float] = {}
+        for match in re.finditer(r'"Pref(\d+)":\s*([-\d.E+]+)', block):
+            idx = int(match.group(1))
+            pref_map[idx] = ScenarioIO._safe_float(match.group(2))
+        for match in re.finditer(r'"ECoeff(\d+)":\s*([-\d.E+]+)', block):
+            idx = int(match.group(1))
+            ecoeff_map[idx] = ScenarioIO._safe_float(match.group(2))
+        return pref_map, ecoeff_map
+
+    @staticmethod
     def _extract_state_blocks(text: str) -> list[str]:
         blocks: list[str] = []
         lines = text.splitlines()
@@ -333,6 +464,23 @@ class ScenarioIO:
         if not match:
             return None
         return match.group(1)
+
+    @staticmethod
+    def _find_int(text: str, pattern: str) -> int | None:
+        match = re.search(pattern, text)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _safe_float(raw: str) -> float:
+        try:
+            return float(raw)
+        except ValueError:
+            return 0.0
 
     @staticmethod
     def export_state_variables(file: str, json_path: str, csv_path: str) -> list[dict]:

@@ -3,7 +3,9 @@ from datetime import datetime
 from pathlib import Path
 
 from aquatox.core import simulate_water_volume
+from aquatox.excel_utils import write_excel
 from aquatox.io_utils import ScenarioIO
+from aquatox.state import Biota
 
 def _parse_date(raw: str) -> datetime:
     for fmt in ("%d/%m/%Y", "%d.%m.%Y"):
@@ -12,6 +14,33 @@ def _parse_date(raw: str) -> datetime:
         except ValueError:
             continue
     raise ValueError("Use dd/mm/yyyy or d.m.yyyy for dates.")
+
+
+def _build_matrix_table(names, matrix):
+    header = ["predator \\ prey"] + list(names)
+    rows = [header]
+    for pred, row in zip(names, matrix):
+        rows.append([pred] + ["" if value is None else value for value in row])
+    return rows
+
+
+def _normalize_matrix(matrix):
+    normalized = []
+    for row in matrix:
+        positives = [value for value in row if isinstance(value, (int, float)) and value > 0]
+        total = sum(positives)
+        if total > 0:
+            normalized.append(
+                [
+                    None
+                    if value is None
+                    else (value / total if isinstance(value, (int, float)) and value > 0 else 0.0)
+                    for value in row
+                ]
+            )
+        else:
+            normalized.append([None if value is None else 0.0 for value in row])
+    return normalized
 
 
 def main() -> None:
@@ -32,10 +61,21 @@ def main() -> None:
         "--series-output",
         help="Optional CSV output path for inflow/outflow time series.",
     )
+    parser.add_argument(
+        "--food-web",
+        help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
+    )
+    parser.add_argument(
+        "--foodweb-output",
+        help="Optional Excel output path (.xml or .xlsx) for 2D food web matrices.",
+    )
     args = parser.parse_args()
 
     print(f"Starting scenario load from file: {args.input}")
-    env, _ = ScenarioIO.load_initial_conditions(args.input)
+    env, state_vars = ScenarioIO.load_initial_conditions(
+        args.input,
+        food_web_path=args.food_web,
+    )
     print("Environment values initialized:")
     print(f"  volume = {env.volume}")
     print(f"  area = {env.area}")
@@ -43,6 +83,7 @@ def main() -> None:
     print(f"  depth_max = {env.depth_max}")
     print(f"  inflow_series entries = {len(env.inflow_series)}")
     print(f"  outflow_series entries = {len(env.outflow_series)}")
+    print(f"  food_web loaded = {env.food_web is not None}")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
     if not series_keys:
@@ -71,6 +112,28 @@ def main() -> None:
             series_output,
         )
         print(f"Wrote inflow/outflow series to: {series_output}")
+
+    if args.foodweb_output:
+        if env.food_web is None:
+            print("Food web not available; skipping food web export.")
+        else:
+            organisms = [sv for sv in state_vars if isinstance(sv, Biota)]
+            names, preferences, egestion = env.food_web.build_foodweb_matrices(organisms)
+            if not names:
+                print("No biota initialized; skipping food web export.")
+            else:
+                pref_table_raw = _build_matrix_table(names, preferences)
+                pref_table_norm = _build_matrix_table(names, _normalize_matrix(preferences))
+                egestion_table = _build_matrix_table(names, egestion)
+                write_excel(
+                    args.foodweb_output,
+                    {
+                        "Preferences (Raw)": pref_table_raw,
+                        "Preferences (Normalized)": pref_table_norm,
+                        "Egestion Coefficients": egestion_table,
+                    },
+                )
+                print(f"Wrote food web Excel XML to: {args.foodweb_output}")
 
 if __name__ == "__main__":
     main()
