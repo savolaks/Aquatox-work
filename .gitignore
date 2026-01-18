@@ -15,3 +15,7 @@ dist/
 build/
 .coverage
 .pytest_cache/
+AQUATOX docs/
+Lake Pyhajarvi Finland_regression.txt
+exports/
+*.csv

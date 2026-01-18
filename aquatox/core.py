@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
+import bisect
 
 from .typing_ext import Date
 
@@ -26,8 +27,83 @@ class Environment:
 
     @staticmethod
     def _get_series_value(series: Dict[Date, float], t: Date) -> float:
-        # exact timestamp match; Stage-1 simple version
-        return series.get(t, 0.0)
+        if not series:
+            return 0.0
+        if t in series:
+            return series[t]
+        dates = Environment._get_sorted_dates(series)
+        if len(dates) == 1:
+            return series[dates[0]]
+        start = dates[0]
+        end = dates[-1]
+        if start <= t <= end:
+            return Environment._interpolate_linear(series, dates, t)
+        target_year = start.year if t < start else end.year
+        t_adj = Environment._shift_to_year(t, target_year)
+        cycle_dates = [d for d in dates if d.year == target_year] or dates
+        if len(cycle_dates) == 1:
+            return series[cycle_dates[0]]
+        return Environment._interpolate_cyclic(series, cycle_dates, t_adj)
+
+    @staticmethod
+    def _get_sorted_dates(series: Dict[Date, float]) -> List[Date]:
+        return sorted(series.keys())
+
+    @staticmethod
+    def _shift_to_year(t: Date, year: int) -> Date:
+        return Environment._add_years(t, year - t.year)
+
+    @staticmethod
+    def _add_years(t: Date, years: int) -> Date:
+        target_year = t.year + years
+        try:
+            return t.replace(year=target_year)
+        except ValueError:
+            return t.replace(year=target_year, month=2, day=28)
+
+    @staticmethod
+    def _interpolate_linear(series: Dict[Date, float], dates: List[Date], t: Date) -> float:
+        idx = bisect.bisect_left(dates, t)
+        if idx <= 0:
+            return series[dates[0]]
+        if idx >= len(dates):
+            return series[dates[-1]]
+        left = dates[idx - 1]
+        right = dates[idx]
+        left_val = series[left]
+        right_val = series[right]
+        span_seconds = (right - left).total_seconds()
+        if span_seconds <= 0:
+            return left_val
+        frac = (t - left).total_seconds() / span_seconds
+        return left_val + (right_val - left_val) * frac
+
+    @staticmethod
+    def _interpolate_cyclic(series: Dict[Date, float], dates: List[Date], t: Date) -> float:
+        dates = sorted(dates)
+        first = dates[0]
+        last = dates[-1]
+        if t in series:
+            return series[t]
+        t_adj = t
+        if t_adj < first:
+            t_adj = Environment._add_years(t_adj, 1)
+        first_plus = Environment._add_years(first, 1)
+        extended_dates = dates + [first_plus]
+        idx = bisect.bisect_left(extended_dates, t_adj)
+        if idx <= 0:
+            return series[first]
+        if idx >= len(extended_dates):
+            return series[first]
+        left = extended_dates[idx - 1]
+        right = extended_dates[idx]
+        left_val = series[left] if left in series else series[first]
+        right_val = series[right] if right in series else series[first]
+        span_seconds = (right - left).total_seconds()
+        if span_seconds <= 0:
+            return left_val
+        frac = (t_adj - left).total_seconds() / span_seconds
+        return left_val + (right_val - left_val) * frac
 
 # ---------------------------
 # StateVariable hierarchy (forward ref; real classes in state.py)
