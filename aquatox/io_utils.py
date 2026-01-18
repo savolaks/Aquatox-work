@@ -11,7 +11,10 @@ from .state import StateVariable, Nutrient, Detritus, Plant, Animal, Biota
 
 class ScenarioIO:
     @staticmethod
-    def load_initial_conditions(file: str) -> tuple[Environment, list[StateVariable]]:
+    def load_initial_conditions(
+        file: str,
+        food_web_path: str | None = None,
+    ) -> tuple[Environment, list[StateVariable]]:
         """Load a scenario file, prompting for any missing data."""
         path = Path(file)
         text = ""
@@ -22,6 +25,20 @@ class ScenarioIO:
         state_vars = ScenarioIO._parse_state_variables(text)
         if not state_vars:
             state_vars = ScenarioIO._prompt_state_variables()
+
+        resolved_food_web = None
+        if food_web_path:
+            resolved_food_web = Path(food_web_path)
+        else:
+            default_path = Path.cwd() / "AQ_Species_Models.cn"
+            if default_path.exists():
+                resolved_food_web = default_path
+
+        if resolved_food_web and resolved_food_web.exists():
+            from .foodweb import FoodWeb
+
+            env.food_web = FoodWeb.from_interspecies_csv(str(resolved_food_web))
+
         return env, state_vars
 
     @staticmethod

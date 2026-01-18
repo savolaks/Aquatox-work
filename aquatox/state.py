@@ -74,6 +74,7 @@ class Plant(Biota):
 class Animal(Biota):
     feeding_prefs: Dict[str, float]  # diet composition by state name
     consumption_rate: float
+    assimilation_eff: float = 0.7
 
     def rate(self, t: Date, dt: float, env: Environment, state_vars: List["StateVariable"]) -> float:
         # Stage-1: same as Biota; consumption wiring will arrive in Stage-2/3
