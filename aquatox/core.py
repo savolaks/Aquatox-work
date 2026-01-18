@@ -108,3 +108,38 @@ class Simulation:
 
     def output_results(self) -> List[Tuple[Date, Dict[str, float]]]:
         return list(self._outputs)
+
+
+def simulate_water_volume(
+    env: Environment,
+    time_start: Date | None = None,
+    time_end: Date | None = None,
+    dt_days: float = 1.0,
+) -> List[Tuple[Date, Dict[str, float]]]:
+    series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
+    if not series_keys:
+        return []
+
+    if time_start is None:
+        time_start = min(series_keys)
+    if time_end is None:
+        time_end = max(series_keys)
+
+    t = time_start
+    outputs: List[Tuple[Date, Dict[str, float]]] = []
+    while t <= time_end:
+        inflow = env.get_inflow(t)
+        outflow = env.get_outflow(t)
+        env.volume += (inflow - outflow) * dt_days
+        outputs.append(
+            (
+                t,
+                {
+                    "volume_m3": env.volume,
+                    "inflow_m3_per_day": inflow,
+                    "outflow_m3_per_day": outflow,
+                },
+            )
+        )
+        t = t + timedelta(days=dt_days)
+    return outputs

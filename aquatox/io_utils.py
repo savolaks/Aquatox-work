@@ -31,7 +31,7 @@ class ScenarioIO:
         depth_mean = ScenarioIO._find_float(text, r'"ICZMean":\s*([-\d.E+]+)')
         depth_max = ScenarioIO._find_float(text, r'"ZMax":\s*([-\d.E+]+)')
         inflow_series = ScenarioIO._parse_inflow_series(text)
-        outflow_series: Dict[datetime, float] = {}
+        outflow_series = ScenarioIO._parse_outflow_series(text)
 
         if volume is None:
             volume = ScenarioIO._prompt_float("Enter lake volume (m^3): ")
@@ -59,16 +59,81 @@ class ScenarioIO:
 
     @staticmethod
     def _parse_inflow_series(text: str) -> Dict[datetime, float]:
+        inflow_series, _ = ScenarioIO._parse_water_volume_series(text)
+        return inflow_series
+
+    @staticmethod
+    def _parse_outflow_series(text: str) -> Dict[datetime, float]:
+        _, outflow_series = ScenarioIO._parse_water_volume_series(text)
+        return outflow_series
+
+    @staticmethod
+    def _parse_water_volume_series(text: str) -> tuple[Dict[datetime, float], Dict[datetime, float]]:
         blocks = ScenarioIO._extract_state_blocks(text)
         for block in blocks:
             if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') != "Water Volume":
                 continue
-            series_line = ScenarioIO._find_str(
-                block, r"Alt\. Time Series Loadings:\s*n=\d+;([^\\n]+)"
+            series_by_section = ScenarioIO._collect_alt_series(block)
+            inflow_series = ScenarioIO._pick_series(
+                series_by_section,
+                [
+                    "LoadingsRecord",
+                    "Point Source Loadings",
+                    "NonPoint Source Loadings",
+                    "Direct Precip Loadings",
+                ],
             )
-            if not series_line:
-                continue
-            return ScenarioIO._parse_time_series(series_line)
+            outflow_series = ScenarioIO._pick_series(
+                series_by_section,
+                ["Direct Precip Loadings"],
+            )
+            return inflow_series, outflow_series
+        return {}, {}
+
+    @staticmethod
+    def _collect_alt_series(block: str) -> Dict[str, list[Dict[datetime, float]]]:
+        headers: list[tuple[int, str]] = []
+        for label in (
+            "Direct Precip Loadings",
+            "NonPoint Source Loadings",
+            "Point Source Loadings",
+            "LoadingsRecord",
+        ):
+            if label == "LoadingsRecord":
+                pattern = r'" LoadingsRecord":\s*{'
+            else:
+                pattern = re.escape(label + ":")
+            for match in re.finditer(pattern, block):
+                headers.append((match.start(), label))
+        headers.sort(key=lambda item: item[0])
+
+        series_by_section: Dict[str, list[Dict[datetime, float]]] = {}
+        for match in re.finditer(
+            r"Alt\. Time Series Loadings:\s*n=\d+;(.+?)(?=\n\s*\"Alt_MultLdg\"|\n\s*Direct Precip Loadings:|\n\s*NonPoint Source Loadings:|\n\s*Point Source Loadings:|$)",
+            block,
+            re.DOTALL,
+        ):
+            section = "LoadingsRecord"
+            for pos, label in headers:
+                if pos <= match.start():
+                    section = label
+                else:
+                    break
+            parsed = ScenarioIO._parse_time_series(match.group(1).strip())
+            if parsed:
+                series_by_section.setdefault(section, []).append(parsed)
+        return series_by_section
+
+    @staticmethod
+    def _pick_series(
+        series_by_section: Dict[str, list[Dict[datetime, float]]],
+        priority: list[str],
+    ) -> Dict[datetime, float]:
+        for section in priority:
+            series_list = series_by_section.get(section, [])
+            if series_list:
+                series_list.sort(key=len, reverse=True)
+                return series_list[0]
         return {}
 
     @staticmethod
@@ -186,13 +251,24 @@ class ScenarioIO:
             date_text, value_text = entry.split(",", 1)
             date_text = date_text.strip()
             value_text = value_text.strip()
+            timestamp = ScenarioIO._parse_date(date_text)
+            if timestamp is None:
+                continue
             try:
-                timestamp = datetime.strptime(date_text, "%d/%m/%Y")
                 value = float(value_text)
             except ValueError:
                 continue
             series[timestamp] = value
         return series
+
+    @staticmethod
+    def _parse_date(raw: str) -> datetime | None:
+        for fmt in ("%d/%m/%Y", "%d.%m.%Y"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+        return None
 
     @staticmethod
     def _prompt_series(label: str) -> Dict[datetime, float]:
@@ -305,6 +381,48 @@ class ScenarioIO:
             w.writerow(["time"] + names)
             for t, snapshot in results:
                 w.writerow([t.isoformat()] + [snapshot.get(n, "") for n in names])
+
+    @staticmethod
+    def save_waterflow_output(results, file: str) -> None:
+        if not results:
+            return
+        import csv
+
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["time", "volume_m3", "inflow_m3_per_day", "outflow_m3_per_day"])
+            for t, snapshot in results:
+                w.writerow(
+                    [
+                        t.isoformat(),
+                        snapshot.get("volume_m3", ""),
+                        snapshot.get("inflow_m3_per_day", ""),
+                        snapshot.get("outflow_m3_per_day", ""),
+                    ]
+                )
+
+    @staticmethod
+    def save_inflow_outflow_series(
+        inflow_series: Dict[datetime, float],
+        outflow_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not inflow_series and not outflow_series:
+            return
+        import csv
+
+        keys = sorted(set(inflow_series.keys()) | set(outflow_series.keys()))
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["time", "inflow_m3_per_day", "outflow_m3_per_day"])
+            for t in keys:
+                w.writerow(
+                    [
+                        t.isoformat(),
+                        inflow_series.get(t, ""),
+                        outflow_series.get(t, ""),
+                    ]
+                )
 
 class Utils:
     @staticmethod
