@@ -19,3 +19,11 @@ AQUATOX docs/
 Lake Pyhajarvi Finland_regression.txt
 exports/
 *.csv
+*.xlsx
+*.xls
+*.pdf
+*.xml
+AQUATOX Users Manual.html
+AQUATOX Users Manual_files/
+foodweb*.xls
+foodweb*.xlsx
