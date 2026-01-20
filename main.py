@@ -2,7 +2,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from aquatox.core import simulate_water_volume
+from aquatox.core import simulate_water_volume, Simulation, ODESolver
 from aquatox.excel_utils import write_excel
 from aquatox.io_utils import ScenarioIO
 from aquatox.state import Biota
@@ -62,6 +62,14 @@ def main() -> None:
         help="Optional CSV output path for inflow/outflow time series.",
     )
     parser.add_argument(
+        "--temp-series-output",
+        help="Optional CSV output path for epilimnion/hypolimnion temperature series.",
+    )
+    parser.add_argument(
+        "--temperature-output",
+        help="Optional CSV output path for simulated temperature output.",
+    )
+    parser.add_argument(
         "--food-web",
         help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
     )
@@ -83,6 +91,9 @@ def main() -> None:
     print(f"  depth_max = {env.depth_max}")
     print(f"  inflow_series entries = {len(env.inflow_series)}")
     print(f"  outflow_series entries = {len(env.outflow_series)}")
+    print(f"  temp_epi_series entries = {len(env.temp_epi_series)}")
+    print(f"  temp_hypo_series entries = {len(env.temp_hypo_series)}")
+    print(f"  temp_forcing_mode = {env.temp_forcing_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
@@ -112,6 +123,23 @@ def main() -> None:
             series_output,
         )
         print(f"Wrote inflow/outflow series to: {series_output}")
+        if args.temperature_output is None:
+            out_path = Path(args.output)
+            args.temperature_output = str(out_path.with_name(out_path.stem + "_temperature.csv"))
+
+    if args.temp_series_output:
+        ScenarioIO.save_temperature_series(
+            env.temp_epi_series,
+            env.temp_hypo_series,
+            args.temp_series_output,
+        )
+        print(f"Wrote temperature series to: {args.temp_series_output}")
+
+    if args.temperature_output:
+        sim = Simulation(env=env, state_vars=state_vars, solver=ODESolver(method="Euler"))
+        sim.run(time_end=end, dt_days=args.dt)
+        ScenarioIO.save_output(sim.output_results(), args.temperature_output)
+        print(f"Wrote temperature output to: {args.temperature_output}")
 
     if args.foodweb_output:
         if env.food_web is None:

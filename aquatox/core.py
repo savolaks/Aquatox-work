@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import bisect
+import math
 
 from .typing_ext import Date
 
@@ -18,6 +19,15 @@ class Environment:
     depth_max: float              # m
     inflow_series: Dict[Date, float]   # m^3/day
     outflow_series: Dict[Date, float]  # m^3/day
+    temp_epi_series: Dict[Date, float] = field(default_factory=dict)
+    temp_hypo_series: Dict[Date, float] = field(default_factory=dict)
+    temp_epi_constant: float | None = None
+    temp_hypo_constant: float | None = None
+    temp_epi_mean: float | None = None
+    temp_epi_range: float | None = None
+    temp_hypo_mean: float | None = None
+    temp_hypo_range: float | None = None
+    temp_forcing_mode: str = "series"  # series | series_interpolate | mean_range | constant
     food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
@@ -25,6 +35,53 @@ class Environment:
 
     def get_outflow(self, t: Date) -> float:
         return self._get_series_value(self.outflow_series, t)
+
+    def get_temp_epi(self, t: Date) -> float:
+        return self._get_series_value(self.temp_epi_series, t)
+
+    def get_temp_hypo(self, t: Date) -> float:
+        return self._get_series_value(self.temp_hypo_series, t)
+
+    def get_temperature_pair(self, t: Date) -> tuple[float | None, float | None, bool]:
+        if self.temp_forcing_mode == "series":
+            if not self.temp_epi_series:
+                return None, None, False
+            epi_value = self.temp_epi_series.get(t)
+            hypo_value = self.temp_hypo_series.get(t) if self.temp_hypo_series else None
+            if epi_value is None:
+                return None, None, False
+            if self.temp_hypo_series and hypo_value is None:
+                return None, None, False
+        elif self.temp_forcing_mode == "series_interpolate":
+            if not self.temp_epi_series:
+                return None, None, False
+            epi_value = self._get_series_value_linear(self.temp_epi_series, t)
+            if self.temp_hypo_series:
+                hypo_value = self._get_series_value_linear(self.temp_hypo_series, t)
+                if hypo_value is None:
+                    return None, None, False
+            else:
+                hypo_value = None
+            if epi_value is None:
+                return None, None, False
+        elif self.temp_forcing_mode == "mean_range":
+            epi_value = self._seasonal_value(self.temp_epi_mean, self.temp_epi_range, t)
+            hypo_value = self._seasonal_value(self.temp_hypo_mean, self.temp_hypo_range, t)
+        else:
+            epi_value = self.temp_epi_constant
+            hypo_value = self.temp_hypo_constant
+
+        if epi_value is None and hypo_value is None:
+            return None, None, False
+        if epi_value is None:
+            epi_value = hypo_value
+        if hypo_value is None:
+            hypo_value = epi_value
+
+        stratified = abs(epi_value - hypo_value) > 3.0
+        if not stratified:
+            hypo_value = epi_value
+        return epi_value, hypo_value, stratified
 
     @staticmethod
     def _get_series_value(series: Dict[Date, float], t: Date) -> float:
@@ -45,6 +102,17 @@ class Environment:
         if len(cycle_dates) == 1:
             return series[cycle_dates[0]]
         return Environment._interpolate_cyclic(series, cycle_dates, t_adj)
+
+    @staticmethod
+    def _get_series_value_linear(series: Dict[Date, float], t: Date) -> float | None:
+        if not series:
+            return None
+        dates = Environment._get_sorted_dates(series)
+        if t < dates[0] or t > dates[-1]:
+            return None
+        if t in series:
+            return series[t]
+        return Environment._interpolate_linear(series, dates, t)
 
     @staticmethod
     def _get_sorted_dates(series: Dict[Date, float]) -> List[Date]:
@@ -105,6 +173,16 @@ class Environment:
             return left_val
         frac = (t_adj - left).total_seconds() / span_seconds
         return left_val + (right_val - left_val) * frac
+
+    @staticmethod
+    def _seasonal_value(mean: float | None, temp_range: float | None, t: Date) -> float | None:
+        if mean is None or temp_range is None:
+            return None
+        amplitude = temp_range / 2.0
+        day_of_year = t.timetuple().tm_yday
+        peak_day = 200
+        angle = 2.0 * math.pi * (day_of_year - peak_day) / 365.0
+        return mean + amplitude * math.cos(angle)
 
 # ---------------------------
 # StateVariable hierarchy (forward ref; real classes in state.py)
@@ -175,6 +253,18 @@ class Simulation:
             t = datetime.utcnow()
 
         while t < time_end:
+            if self.env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
+                epi_temp, hypo_temp, stratified = self.env.get_temperature_pair(t)
+                if epi_temp is None or hypo_temp is None:
+                    raise ValueError(
+                        "Temperature forcing requires full coverage; "
+                        "provide a complete time series or use mean/range or constant."
+                    )
+                for sv in self.state_vars:
+                    if sv.name.lower() == "temperature":
+                        sv.value = epi_temp
+                        break
+
             # 1) integrate biological/chemical compartments
             self.solver.integrate(self.state_vars, self.env, t, dt_days)
 
@@ -185,6 +275,10 @@ class Simulation:
 
             # 3) record outputs
             snapshot = {sv.name: sv.value for sv in self.state_vars}
+            if self.env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
+                snapshot["Temperature_Epilimnion"] = epi_temp
+                snapshot["Temperature_Hypolimnion"] = hypo_temp
+                snapshot["Temperature_Stratified"] = stratified
             self._outputs.append((t, snapshot))
 
             # 4) advance time

@@ -52,6 +52,19 @@ class ScenarioIO:
         depth_max = ScenarioIO._find_float(text, r'"ZMax":\s*([-\d.E+]+)')
         inflow_series = ScenarioIO._parse_inflow_series(text)
         outflow_series = ScenarioIO._parse_outflow_series(text)
+        temp_epi_series, temp_hypo_series = ScenarioIO._parse_temperature_series(text)
+        temp_epi_const, temp_hypo_const = ScenarioIO._parse_temperature_constants(text)
+        temp_epi_mean, temp_epi_range, temp_hypo_mean, temp_hypo_range = (
+            ScenarioIO._parse_temperature_mean_range(text)
+        )
+        temp_forcing_mode = ScenarioIO._choose_temperature_mode(
+            temp_epi_series,
+            temp_hypo_series,
+            temp_epi_mean,
+            temp_epi_range,
+            temp_hypo_mean,
+            temp_hypo_range,
+        )
 
         if volume is None:
             volume = ScenarioIO._prompt_float("Enter lake volume (m^3): ")
@@ -67,6 +80,15 @@ class ScenarioIO:
             outflow_series = dict(inflow_series)
         if not outflow_series:
             outflow_series = ScenarioIO._prompt_series("outflow")
+        if temp_forcing_mode == "mean_range":
+            if temp_epi_mean is None:
+                temp_epi_mean = ScenarioIO._prompt_float("Enter epilimnion temp mean (deg C): ")
+            if temp_epi_range is None:
+                temp_epi_range = ScenarioIO._prompt_float("Enter epilimnion temp range (deg C): ")
+            if temp_hypo_mean is None:
+                temp_hypo_mean = ScenarioIO._prompt_float("Enter hypolimnion temp mean (deg C): ")
+            if temp_hypo_range is None:
+                temp_hypo_range = ScenarioIO._prompt_float("Enter hypolimnion temp range (deg C): ")
 
         return Environment(
             volume=volume,
@@ -75,6 +97,15 @@ class ScenarioIO:
             depth_max=depth_max,
             inflow_series=inflow_series,
             outflow_series=outflow_series,
+            temp_epi_series=temp_epi_series,
+            temp_hypo_series=temp_hypo_series,
+            temp_epi_constant=temp_epi_const,
+            temp_hypo_constant=temp_hypo_const,
+            temp_epi_mean=temp_epi_mean,
+            temp_epi_range=temp_epi_range,
+            temp_hypo_mean=temp_hypo_mean,
+            temp_hypo_range=temp_hypo_range,
+            temp_forcing_mode=temp_forcing_mode,
         )
 
     @staticmethod
@@ -86,6 +117,87 @@ class ScenarioIO:
     def _parse_outflow_series(text: str) -> Dict[datetime, float]:
         _, outflow_series = ScenarioIO._parse_water_volume_series(text)
         return outflow_series
+
+    @staticmethod
+    def _parse_temperature_series(text: str) -> tuple[Dict[datetime, float], Dict[datetime, float]]:
+        epi_series: Dict[datetime, float] = {}
+        hypo_series: Dict[datetime, float] = {}
+
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Temperature":
+                epi_series = ScenarioIO._parse_time_series_from_block(block)
+                break
+
+        hypo_block = ScenarioIO._extract_named_block(text, "HypoTempLoads LoadingsRecord")
+        if hypo_block:
+            hypo_series = ScenarioIO._parse_time_series_from_block(hypo_block)
+
+        return epi_series, hypo_series
+
+    @staticmethod
+    def _parse_temperature_constants(text: str) -> tuple[float | None, float | None]:
+        epi_const = None
+        hypo_const = ScenarioIO._find_float(text, r'"HypoTempIC":\s*([-\d.E+]+)')
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Temperature":
+                epi_const = ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+                break
+        return epi_const, hypo_const
+
+    @staticmethod
+    def _parse_temperature_mean_range(
+        text: str,
+    ) -> tuple[float | None, float | None, float | None, float | None]:
+        epi_mean = ScenarioIO._find_float(text, r'"TempMean\[epilimnion\]":\s*([-\d.E+]+)')
+        epi_range = ScenarioIO._find_float(text, r'"TempRange\[epilimnion\]":\s*([-\d.E+]+)')
+        hypo_mean = ScenarioIO._find_float(text, r'"TempMean\[Hypolimnion\]":\s*([-\d.E+]+)')
+        hypo_range = ScenarioIO._find_float(text, r'"TempRange\[Hypolimnion\]":\s*([-\d.E+]+)')
+        return epi_mean, epi_range, hypo_mean, hypo_range
+
+    @staticmethod
+    def _choose_temperature_mode(
+        epi_series: Dict[datetime, float],
+        hypo_series: Dict[datetime, float],
+        epi_mean: float | None,
+        epi_range: float | None,
+        hypo_mean: float | None,
+        hypo_range: float | None,
+    ) -> str:
+        has_series = bool(epi_series) or bool(hypo_series)
+        has_mean_range = (
+            epi_mean is not None
+            and epi_range is not None
+            and hypo_mean is not None
+            and hypo_range is not None
+        )
+        if not has_series and not has_mean_range:
+            return "constant"
+        if has_series:
+            prompt = "Use time-series forcing for temperature? [Y/n]: "
+            while True:
+                raw = input(prompt).strip().lower()
+                if raw in ("", "y", "yes"):
+                    interp_prompt = "Allow interpolation for missing dates? [Y/n]: "
+                    while True:
+                        interp_raw = input(interp_prompt).strip().lower()
+                        if interp_raw in ("", "y", "yes"):
+                            return "series_interpolate"
+                        if interp_raw in ("n", "no"):
+                            return "series"
+                        print("Enter y or n.")
+                if raw in ("n", "no"):
+                    break
+                print("Enter y or n.")
+        if has_mean_range:
+            prompt = "Use annual mean/range for temperature? [Y/n]: "
+            while True:
+                raw = input(prompt).strip().lower()
+                if raw in ("", "y", "yes"):
+                    return "mean_range"
+                if raw in ("n", "no"):
+                    break
+                print("Enter y or n.")
+        return "constant"
 
     @staticmethod
     def _parse_water_volume_series(text: str) -> tuple[Dict[datetime, float], Dict[datetime, float]]:
@@ -155,6 +267,17 @@ class ScenarioIO:
                 series_list.sort(key=len, reverse=True)
                 return series_list[0]
         return {}
+
+    @staticmethod
+    def _parse_time_series_from_block(block: str) -> Dict[datetime, float]:
+        match = re.search(
+            r"Time Series Loadings:\s*n=\d+;(.+?)(?=\n\s*\"MultLdg\"|\n\s*\"LoadsRec\.MultLdg\"|\n\s*\"PRequiresData\^\"|$)",
+            block,
+            re.DOTALL,
+        )
+        if not match:
+            return {}
+        return ScenarioIO._parse_time_series(match.group(1).strip())
 
     @staticmethod
     def _parse_state_variables(text: str) -> list[StateVariable]:
@@ -525,10 +648,13 @@ class ScenarioIO:
         times, first = results[0]
         names = sorted(first.keys())
         with open(file, "w", newline="") as f:
-            w = csv.writer(f)
+            w = csv.writer(f, delimiter=";")
             w.writerow(["time"] + names)
             for t, snapshot in results:
-                w.writerow([t.isoformat()] + [snapshot.get(n, "") for n in names])
+                w.writerow(
+                    [t.isoformat()]
+                    + [ScenarioIO._format_excel_cell(snapshot.get(n, "")) for n in names]
+                )
 
     @staticmethod
     def save_waterflow_output(results, file: str) -> None:
@@ -537,15 +663,15 @@ class ScenarioIO:
         import csv
 
         with open(file, "w", newline="") as f:
-            w = csv.writer(f)
+            w = csv.writer(f, delimiter=";")
             w.writerow(["time", "volume_m3", "inflow_m3_per_day", "outflow_m3_per_day"])
             for t, snapshot in results:
                 w.writerow(
                     [
                         t.isoformat(),
-                        snapshot.get("volume_m3", ""),
-                        snapshot.get("inflow_m3_per_day", ""),
-                        snapshot.get("outflow_m3_per_day", ""),
+                        ScenarioIO._format_excel_cell(snapshot.get("volume_m3", "")),
+                        ScenarioIO._format_excel_cell(snapshot.get("inflow_m3_per_day", "")),
+                        ScenarioIO._format_excel_cell(snapshot.get("outflow_m3_per_day", "")),
                     ]
                 )
 
@@ -561,16 +687,51 @@ class ScenarioIO:
 
         keys = sorted(set(inflow_series.keys()) | set(outflow_series.keys()))
         with open(file, "w", newline="") as f:
-            w = csv.writer(f)
+            w = csv.writer(f, delimiter=";")
             w.writerow(["time", "inflow_m3_per_day", "outflow_m3_per_day"])
             for t in keys:
                 w.writerow(
                     [
                         t.isoformat(),
-                        inflow_series.get(t, ""),
-                        outflow_series.get(t, ""),
+                        ScenarioIO._format_excel_cell(inflow_series.get(t, "")),
+                        ScenarioIO._format_excel_cell(outflow_series.get(t, "")),
                     ]
                 )
+
+    @staticmethod
+    def save_temperature_series(
+        epi_series: Dict[datetime, float],
+        hypo_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not epi_series and not hypo_series:
+            return
+        import csv
+
+        keys = sorted(set(epi_series.keys()) | set(hypo_series.keys()))
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["time", "temp_epi_degC", "temp_hypo_degC"])
+            for t in keys:
+                epi_value = ScenarioIO._format_excel_number(epi_series.get(t))
+                hypo_value = ScenarioIO._format_excel_number(hypo_series.get(t))
+                w.writerow([t.strftime("%d.%m.%Y"), epi_value, hypo_value])
+
+    @staticmethod
+    def _format_excel_number(value: float | None) -> str:
+        if value is None:
+            return ""
+        return str(value).replace(".", ",")
+
+    @staticmethod
+    def _format_excel_cell(value) -> str:
+        if value is None or value == "":
+            return ""
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, (int, float)):
+            return str(value).replace(".", ",")
+        return str(value)
 
 class Utils:
     @staticmethod
