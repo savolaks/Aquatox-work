@@ -57,6 +57,10 @@ class ScenarioIO:
         temp_epi_mean, temp_epi_range, temp_hypo_mean, temp_hypo_range = (
             ScenarioIO._parse_temperature_mean_range(text)
         )
+        wind_series = ScenarioIO._parse_wind_series(text)
+        wind_constant = ScenarioIO._parse_wind_constant(text)
+        wind_mean = ScenarioIO._parse_wind_mean(text)
+        wind_use_constant = ScenarioIO._parse_wind_use_constant(text)
         temp_forcing_mode = ScenarioIO._choose_temperature_mode(
             temp_epi_series,
             temp_hypo_series,
@@ -64,6 +68,12 @@ class ScenarioIO:
             temp_epi_range,
             temp_hypo_mean,
             temp_hypo_range,
+        )
+        wind_forcing_mode = ScenarioIO._choose_wind_mode(
+            wind_series,
+            wind_constant,
+            wind_mean,
+            wind_use_constant,
         )
 
         if volume is None:
@@ -89,6 +99,30 @@ class ScenarioIO:
                 temp_hypo_mean = ScenarioIO._prompt_float("Enter hypolimnion temp mean (deg C): ")
             if temp_hypo_range is None:
                 temp_hypo_range = ScenarioIO._prompt_float("Enter hypolimnion temp range (deg C): ")
+        if wind_forcing_mode == "constant" and wind_constant is None:
+            wind_constant = ScenarioIO._prompt_float("Enter constant wind loading (m/s): ")
+        if wind_forcing_mode == "default_series":
+            if wind_mean is None:
+                wind_mean = ScenarioIO._prompt_float(
+                    "Enter mean wind value (m/s) for default time series: "
+                )
+            else:
+                prompt = f"Use mean wind value from file ({wind_mean} m/s)? [Y/n]: "
+                while True:
+                    raw = input(prompt).strip().lower()
+                    if raw in ("", "y", "yes"):
+                        break
+                    if raw in ("n", "no"):
+                        wind_mean = ScenarioIO._prompt_float(
+                            "Enter mean wind value (m/s) for default time series: "
+                        )
+                        break
+                    print("Enter y or n.")
+        if wind_forcing_mode == "time_varying" and not wind_series:
+            wind_series = ScenarioIO._prompt_time_series(
+                "wind",
+                "Wind value per day (m/s): ",
+            )
 
         return Environment(
             volume=volume,
@@ -106,6 +140,10 @@ class ScenarioIO:
             temp_hypo_mean=temp_hypo_mean,
             temp_hypo_range=temp_hypo_range,
             temp_forcing_mode=temp_forcing_mode,
+            wind_series=wind_series,
+            wind_constant=wind_constant,
+            wind_mean=wind_mean,
+            wind_forcing_mode=wind_forcing_mode,
         )
 
     @staticmethod
@@ -155,6 +193,41 @@ class ScenarioIO:
         return epi_mean, epi_range, hypo_mean, hypo_range
 
     @staticmethod
+    def _parse_wind_series(text: str) -> Dict[datetime, float]:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Wind Loading":
+                return ScenarioIO._parse_time_series_from_block(block)
+        return {}
+
+    @staticmethod
+    def _parse_wind_constant(text: str) -> float | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') != "Wind Loading":
+                continue
+            const_value = ScenarioIO._find_float(block, r'"ConstLoad":\s*([-\d.E+]+)')
+            if const_value is not None:
+                return const_value
+            return ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+        return None
+
+    @staticmethod
+    def _parse_wind_mean(text: str) -> float | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Wind Loading":
+                return ScenarioIO._find_float(block, r'"TWindLoading\.MeanValue":\s*([-\d.E+]+)')
+        return None
+
+    @staticmethod
+    def _parse_wind_use_constant(text: str) -> bool | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Wind Loading":
+                raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
+                if raw is None:
+                    return None
+                return raw.upper() == "TRUE"
+        return None
+
+    @staticmethod
     def _choose_temperature_mode(
         epi_series: Dict[datetime, float],
         hypo_series: Dict[datetime, float],
@@ -198,6 +271,49 @@ class ScenarioIO:
                     break
                 print("Enter y or n.")
         return "constant"
+
+    @staticmethod
+    def _choose_wind_mode(
+        wind_series: Dict[datetime, float],
+        wind_constant: float | None,
+        wind_mean: float | None,
+        wind_use_constant: bool | None,
+    ) -> str:
+        has_series = bool(wind_series)
+        has_constant = wind_constant is not None
+        has_mean = wind_mean is not None
+
+        if wind_use_constant is True and has_constant:
+            return "constant"
+        if wind_use_constant is False and (has_series or has_mean):
+            default_mode = "time_varying"
+        elif has_mean:
+            default_mode = "default_series"
+        elif has_constant:
+            default_mode = "constant"
+        else:
+            default_mode = "time_varying"
+
+        print("Wind loading options:")
+        print("  1) Enter constant wind")
+        print("  2) Use default time series (365-day Fourier)")
+        print("  3) Use time-varying wind (annual wrap of series)")
+        default_label = {
+            "constant": "1",
+            "default_series": "2",
+            "time_varying": "3",
+        }[default_mode]
+        while True:
+            raw = input(f"Select wind loading mode [default {default_label}]: ").strip().lower()
+            if raw == "":
+                return default_mode
+            if raw in ("1", "constant", "const"):
+                return "constant"
+            if raw in ("2", "default", "default_series", "default time series"):
+                return "default_series"
+            if raw in ("3", "time", "time-varying", "timevarying"):
+                return "time_varying"
+            print("Enter 1, 2, or 3.")
 
     @staticmethod
     def _parse_water_volume_series(text: str) -> tuple[Dict[datetime, float], Dict[datetime, float]]:
@@ -533,6 +649,17 @@ class ScenarioIO:
         return {start + timedelta(days=i): value for i in range(days)}
 
     @staticmethod
+    def _prompt_time_series(label: str, value_prompt: str) -> Dict[datetime, float]:
+        print(f"Series not found in file ({label}); enter values via CLI.")
+        start = ScenarioIO._prompt_date(f"{label} start date (dd/mm/yyyy): ")
+        days = ScenarioIO._prompt_int(f"{label} number of days: ")
+        series: Dict[datetime, float] = {}
+        for offset in range(days):
+            value = ScenarioIO._prompt_float(value_prompt)
+            series[start + timedelta(days=offset)] = value
+        return series
+
+    @staticmethod
     def _prompt_text(prompt: str) -> str:
         while True:
             value = input(prompt).strip()
@@ -716,6 +843,23 @@ class ScenarioIO:
                 epi_value = ScenarioIO._format_excel_number(epi_series.get(t))
                 hypo_value = ScenarioIO._format_excel_number(hypo_series.get(t))
                 w.writerow([t.strftime("%d.%m.%Y"), epi_value, hypo_value])
+
+    @staticmethod
+    def save_wind_series(
+        wind_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not wind_series:
+            return
+        import csv
+
+        keys = sorted(wind_series.keys())
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["time", "wind_m_s"])
+            for t in keys:
+                wind_value = ScenarioIO._format_excel_number(wind_series.get(t))
+                w.writerow([t.strftime("%d.%m.%Y"), wind_value])
 
     @staticmethod
     def _format_excel_number(value: float | None) -> str:

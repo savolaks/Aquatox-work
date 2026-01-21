@@ -8,6 +8,23 @@ import math
 
 from .typing_ext import Date
 
+DEFAULT_WIND_CYCLE_DAYS = 365
+DEFAULT_WIND_EPOCH_ORDINAL = datetime(2000, 1, 1).toordinal()
+DEFAULT_WIND_TERMS: list[tuple[int, float, float]] = [
+    (1, 0.83408, 0.87256),
+    (2, 0.4245, -0.2871),
+    (4, -0.2158, -0.6634),
+    (8, -0.0264, -0.2766),
+    (16, 0.0236, -0.3492),
+    (32, -0.442, 0.89),
+    (64, -1.4385, 0.634),
+    (128, 0.0935, -1.06),
+    (200, -0.564, -0.291),
+    (300, -0.6484, 0.6162),
+    (6, 0.1083, 0.4047),
+    (3, 0.0268, -0.1209),
+]
+
 # ---------------------------
 # Environment (per UML)
 # ---------------------------
@@ -28,6 +45,10 @@ class Environment:
     temp_hypo_mean: float | None = None
     temp_hypo_range: float | None = None
     temp_forcing_mode: str = "series"  # series | series_interpolate | mean_range | constant
+    wind_series: Dict[Date, float] = field(default_factory=dict)
+    wind_constant: float | None = None
+    wind_mean: float | None = None
+    wind_forcing_mode: str = "constant"  # constant | default_series | time_varying
     food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
@@ -82,6 +103,27 @@ class Environment:
         if not stratified:
             hypo_value = epi_value
         return epi_value, hypo_value, stratified
+
+    def get_wind(self, t: Date) -> float | None:
+        if self.wind_forcing_mode == "default_series":
+            return self._default_wind_value(t)
+        if self.wind_forcing_mode == "time_varying":
+            if not self.wind_series:
+                return None
+            return self._get_series_value(self.wind_series, t)
+        return self.wind_constant
+
+    def _default_wind_value(self, t: Date) -> float | None:
+        if self.wind_mean is None:
+            return None
+        mean_value = self.wind_mean if self.wind_mean > 0 else 3.0
+        julian_day = t.timetuple().tm_yday
+        base_angle = 2.0 * math.pi * julian_day / DEFAULT_WIND_CYCLE_DAYS
+        value = mean_value
+        for freq, coef_cos, coef_sin in DEFAULT_WIND_TERMS:
+            angle = base_angle * freq
+            value += coef_cos * math.cos(angle) + coef_sin * math.sin(angle)
+        return max(value, 0.0)
 
     @staticmethod
     def _get_series_value(series: Dict[Date, float], t: Date) -> float:
@@ -263,6 +305,17 @@ class Simulation:
                 for sv in self.state_vars:
                     if sv.name.lower() == "temperature":
                         sv.value = epi_temp
+                        break
+            if self.env.wind_forcing_mode in ("default_series", "time_varying", "constant"):
+                wind_value = self.env.get_wind(t)
+                if wind_value is None:
+                    raise ValueError(
+                        "Wind forcing requires full coverage; "
+                        "provide a time series, default mean value, or constant."
+                    )
+                for sv in self.state_vars:
+                    if sv.name.lower() == "wind loading":
+                        sv.value = wind_value
                         break
 
             # 1) integrate biological/chemical compartments

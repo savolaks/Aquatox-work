@@ -1,5 +1,5 @@
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from aquatox.core import simulate_water_volume, Simulation, ODESolver
@@ -70,6 +70,10 @@ def main() -> None:
         help="Optional CSV output path for simulated temperature output.",
     )
     parser.add_argument(
+        "--wind-output",
+        help="Optional CSV output path for simulated wind output.",
+    )
+    parser.add_argument(
         "--food-web",
         help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
     )
@@ -94,6 +98,8 @@ def main() -> None:
     print(f"  temp_epi_series entries = {len(env.temp_epi_series)}")
     print(f"  temp_hypo_series entries = {len(env.temp_hypo_series)}")
     print(f"  temp_forcing_mode = {env.temp_forcing_mode}")
+    print(f"  wind_series entries = {len(env.wind_series)}")
+    print(f"  wind_forcing_mode = {env.wind_forcing_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
@@ -140,6 +146,17 @@ def main() -> None:
         sim.run(time_end=end, dt_days=args.dt)
         ScenarioIO.save_output(sim.output_results(), args.temperature_output)
         print(f"Wrote temperature output to: {args.temperature_output}")
+
+    if args.wind_output:
+        wind_series = {}
+        t = start
+        while t < end:
+            wind_value = env.get_wind(t)
+            if wind_value is not None:
+                wind_series[t] = wind_value
+            t = t + timedelta(days=args.dt)
+        ScenarioIO.save_wind_series(wind_series, args.wind_output)
+        print(f"Wrote wind output to: {args.wind_output}")
 
     if args.foodweb_output:
         if env.food_web is None:
