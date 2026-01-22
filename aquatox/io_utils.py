@@ -65,6 +65,9 @@ class ScenarioIO:
         light_constant = ScenarioIO._parse_light_constant(text)
         light_mean, light_range = ScenarioIO._parse_light_mean_range(text)
         light_use_constant = ScenarioIO._parse_light_use_constant(text)
+        ph_series = ScenarioIO._parse_ph_series(text)
+        ph_constant = ScenarioIO._parse_ph_constant(text)
+        ph_use_constant = ScenarioIO._parse_ph_use_constant(text)
         temp_forcing_mode = ScenarioIO._choose_temperature_mode(
             temp_epi_series,
             temp_hypo_series,
@@ -85,6 +88,11 @@ class ScenarioIO:
             light_mean,
             light_range,
             light_use_constant,
+        )
+        ph_forcing_mode = ScenarioIO._choose_ph_mode(
+            ph_series,
+            ph_constant,
+            ph_use_constant,
         )
 
         if volume is None:
@@ -146,6 +154,13 @@ class ScenarioIO:
                 "light",
                 "Light value per day (Ly/d): ",
             )
+        if ph_forcing_mode == "constant" and ph_constant is None:
+            ph_constant = ScenarioIO._prompt_float("Enter constant pH: ")
+        if ph_forcing_mode == "time_varying" and not ph_series:
+            ph_series = ScenarioIO._prompt_time_series(
+                "pH",
+                "pH value per day: ",
+            )
 
         return Environment(
             volume=volume,
@@ -172,6 +187,9 @@ class ScenarioIO:
             light_mean=light_mean,
             light_range=light_range,
             light_forcing_mode=light_forcing_mode,
+            ph_series=ph_series,
+            ph_constant=ph_constant,
+            ph_forcing_mode=ph_forcing_mode,
         )
 
     @staticmethod
@@ -283,6 +301,34 @@ class ScenarioIO:
     def _parse_light_use_constant(text: str) -> bool | None:
         for block in ScenarioIO._extract_state_blocks(text):
             if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Light":
+                raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
+                if raw is None:
+                    return None
+                return raw.upper() == "TRUE"
+        return None
+
+    @staticmethod
+    def _parse_ph_series(text: str) -> Dict[datetime, float]:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "pH":
+                return ScenarioIO._parse_time_series_from_block(block)
+        return {}
+
+    @staticmethod
+    def _parse_ph_constant(text: str) -> float | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') != "pH":
+                continue
+            const_value = ScenarioIO._find_float(block, r'"ConstLoad":\s*([-\d.E+]+)')
+            if const_value is not None:
+                return const_value
+            return ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+        return None
+
+    @staticmethod
+    def _parse_ph_use_constant(text: str) -> bool | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "pH":
                 raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
                 if raw is None:
                     return None
@@ -422,6 +468,43 @@ class ScenarioIO:
             if raw in ("3", "time", "time-varying", "timevarying"):
                 return "time_varying"
             print("Enter 1, 2, or 3.")
+
+    @staticmethod
+    def _choose_ph_mode(
+        ph_series: Dict[datetime, float],
+        ph_constant: float | None,
+        ph_use_constant: bool | None,
+    ) -> str:
+        has_series = bool(ph_series)
+        has_constant = ph_constant is not None
+
+        if ph_use_constant is True and has_constant:
+            return "constant"
+        if ph_use_constant is False and has_series:
+            default_mode = "time_varying"
+        elif has_series:
+            default_mode = "time_varying"
+        elif has_constant:
+            default_mode = "constant"
+        else:
+            default_mode = "constant"
+
+        print("pH loading options:")
+        print("  1) Enter constant pH")
+        print("  2) Use time-varying pH")
+        default_label = {
+            "constant": "1",
+            "time_varying": "2",
+        }[default_mode]
+        while True:
+            raw = input(f"Select pH loading mode [default {default_label}]: ").strip().lower()
+            if raw == "":
+                return default_mode
+            if raw in ("1", "constant", "const"):
+                return "constant"
+            if raw in ("2", "time", "time-varying", "timevarying"):
+                return "time_varying"
+            print("Enter 1 or 2.")
 
     @staticmethod
     def _parse_water_volume_series(text: str) -> tuple[Dict[datetime, float], Dict[datetime, float]]:
@@ -985,6 +1068,23 @@ class ScenarioIO:
             for t in keys:
                 light_value = ScenarioIO._format_excel_number(light_series.get(t))
                 w.writerow([t.strftime("%d.%m.%Y"), light_value])
+
+    @staticmethod
+    def save_ph_series(
+        ph_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not ph_series:
+            return
+        import csv
+
+        keys = sorted(ph_series.keys())
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["time", "ph"])
+            for t in keys:
+                ph_value = ScenarioIO._format_excel_number(ph_series.get(t))
+                w.writerow([t.strftime("%d.%m.%Y"), ph_value])
 
     @staticmethod
     def _format_excel_number(value: float | None) -> str:

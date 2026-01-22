@@ -54,6 +54,9 @@ class Environment:
     light_mean: float | None = None
     light_range: float | None = None
     light_forcing_mode: str = "constant"  # constant | mean_range | time_varying
+    ph_series: Dict[Date, float] = field(default_factory=dict)
+    ph_constant: float | None = None
+    ph_forcing_mode: str = "constant"  # constant | time_varying
     food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
@@ -126,6 +129,13 @@ class Environment:
         if self.light_forcing_mode == "mean_range":
             return self._seasonal_value(self.light_mean, self.light_range, t)
         return self.light_constant
+
+    def get_ph(self, t: Date) -> float | None:
+        if self.ph_forcing_mode == "time_varying":
+            if not self.ph_series:
+                return None
+            return self._get_series_value(self.ph_series, t)
+        return self.ph_constant
 
     def _default_wind_value(self, t: Date) -> float | None:
         if self.wind_mean is None:
@@ -341,6 +351,17 @@ class Simulation:
                 for sv in self.state_vars:
                     if sv.name.lower() == "light":
                         sv.value = light_value
+                        break
+            if self.env.ph_forcing_mode in ("constant", "time_varying"):
+                ph_value = self.env.get_ph(t)
+                if ph_value is None:
+                    raise ValueError(
+                        "pH forcing requires full coverage; "
+                        "provide a time series or constant."
+                    )
+                for sv in self.state_vars:
+                    if sv.name.lower() == "ph":
+                        sv.value = ph_value
                         break
 
             # 1) integrate biological/chemical compartments

@@ -78,6 +78,10 @@ def main() -> None:
         help="Optional CSV output path for simulated light output.",
     )
     parser.add_argument(
+        "--ph-output",
+        help="Optional CSV output path for simulated pH output.",
+    )
+    parser.add_argument(
         "--food-web",
         help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
     )
@@ -106,6 +110,8 @@ def main() -> None:
     print(f"  wind_forcing_mode = {env.wind_forcing_mode}")
     print(f"  light_series entries = {len(env.light_series)}")
     print(f"  light_forcing_mode = {env.light_forcing_mode}")
+    print(f"  ph_series entries = {len(env.ph_series)}")
+    print(f"  ph_forcing_mode = {env.ph_forcing_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
@@ -174,6 +180,17 @@ def main() -> None:
             t = t + timedelta(days=args.dt)
         ScenarioIO.save_light_series(light_series, args.light_output)
         print(f"Wrote light output to: {args.light_output}")
+
+    if args.ph_output:
+        ph_series = {}
+        t = start
+        while t < end:
+            ph_value = env.get_ph(t)
+            if ph_value is not None:
+                ph_series[t] = ph_value
+            t = t + timedelta(days=args.dt)
+        ScenarioIO.save_ph_series(ph_series, args.ph_output)
+        print(f"Wrote pH output to: {args.ph_output}")
 
     if args.foodweb_output:
         if env.food_web is None:
