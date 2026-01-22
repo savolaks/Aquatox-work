@@ -49,6 +49,11 @@ class Environment:
     wind_constant: float | None = None
     wind_mean: float | None = None
     wind_forcing_mode: str = "constant"  # constant | default_series | time_varying
+    light_series: Dict[Date, float] = field(default_factory=dict)
+    light_constant: float | None = None
+    light_mean: float | None = None
+    light_range: float | None = None
+    light_forcing_mode: str = "constant"  # constant | mean_range | time_varying
     food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
@@ -112,6 +117,15 @@ class Environment:
                 return None
             return self._get_series_value(self.wind_series, t)
         return self.wind_constant
+
+    def get_light(self, t: Date) -> float | None:
+        if self.light_forcing_mode == "time_varying":
+            if not self.light_series:
+                return None
+            return self._get_series_value(self.light_series, t)
+        if self.light_forcing_mode == "mean_range":
+            return self._seasonal_value(self.light_mean, self.light_range, t)
+        return self.light_constant
 
     def _default_wind_value(self, t: Date) -> float | None:
         if self.wind_mean is None:
@@ -316,6 +330,17 @@ class Simulation:
                 for sv in self.state_vars:
                     if sv.name.lower() == "wind loading":
                         sv.value = wind_value
+                        break
+            if self.env.light_forcing_mode in ("constant", "mean_range", "time_varying"):
+                light_value = self.env.get_light(t)
+                if light_value is None:
+                    raise ValueError(
+                        "Light forcing requires full coverage; "
+                        "provide a time series, annual mean/range, or constant."
+                    )
+                for sv in self.state_vars:
+                    if sv.name.lower() == "light":
+                        sv.value = light_value
                         break
 
             # 1) integrate biological/chemical compartments

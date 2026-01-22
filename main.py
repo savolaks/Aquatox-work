@@ -74,6 +74,10 @@ def main() -> None:
         help="Optional CSV output path for simulated wind output.",
     )
     parser.add_argument(
+        "--light-output",
+        help="Optional CSV output path for simulated light output.",
+    )
+    parser.add_argument(
         "--food-web",
         help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
     )
@@ -100,6 +104,8 @@ def main() -> None:
     print(f"  temp_forcing_mode = {env.temp_forcing_mode}")
     print(f"  wind_series entries = {len(env.wind_series)}")
     print(f"  wind_forcing_mode = {env.wind_forcing_mode}")
+    print(f"  light_series entries = {len(env.light_series)}")
+    print(f"  light_forcing_mode = {env.light_forcing_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
@@ -157,6 +163,17 @@ def main() -> None:
             t = t + timedelta(days=args.dt)
         ScenarioIO.save_wind_series(wind_series, args.wind_output)
         print(f"Wrote wind output to: {args.wind_output}")
+
+    if args.light_output:
+        light_series = {}
+        t = start
+        while t < end:
+            light_value = env.get_light(t)
+            if light_value is not None:
+                light_series[t] = light_value
+            t = t + timedelta(days=args.dt)
+        ScenarioIO.save_light_series(light_series, args.light_output)
+        print(f"Wrote light output to: {args.light_output}")
 
     if args.foodweb_output:
         if env.food_web is None:

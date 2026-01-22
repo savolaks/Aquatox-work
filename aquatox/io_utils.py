@@ -61,6 +61,10 @@ class ScenarioIO:
         wind_constant = ScenarioIO._parse_wind_constant(text)
         wind_mean = ScenarioIO._parse_wind_mean(text)
         wind_use_constant = ScenarioIO._parse_wind_use_constant(text)
+        light_series = ScenarioIO._parse_light_series(text)
+        light_constant = ScenarioIO._parse_light_constant(text)
+        light_mean, light_range = ScenarioIO._parse_light_mean_range(text)
+        light_use_constant = ScenarioIO._parse_light_use_constant(text)
         temp_forcing_mode = ScenarioIO._choose_temperature_mode(
             temp_epi_series,
             temp_hypo_series,
@@ -74,6 +78,13 @@ class ScenarioIO:
             wind_constant,
             wind_mean,
             wind_use_constant,
+        )
+        light_forcing_mode = ScenarioIO._choose_light_mode(
+            light_series,
+            light_constant,
+            light_mean,
+            light_range,
+            light_use_constant,
         )
 
         if volume is None:
@@ -123,6 +134,18 @@ class ScenarioIO:
                 "wind",
                 "Wind value per day (m/s): ",
             )
+        if light_forcing_mode == "constant" and light_constant is None:
+            light_constant = ScenarioIO._prompt_float("Enter constant light loading (Ly/d): ")
+        if light_forcing_mode == "mean_range":
+            if light_mean is None:
+                light_mean = ScenarioIO._prompt_float("Enter mean light value (Ly/d): ")
+            if light_range is None:
+                light_range = ScenarioIO._prompt_float("Enter light range (Ly/d): ")
+        if light_forcing_mode == "time_varying" and not light_series:
+            light_series = ScenarioIO._prompt_time_series(
+                "light",
+                "Light value per day (Ly/d): ",
+            )
 
         return Environment(
             volume=volume,
@@ -144,6 +167,11 @@ class ScenarioIO:
             wind_constant=wind_constant,
             wind_mean=wind_mean,
             wind_forcing_mode=wind_forcing_mode,
+            light_series=light_series,
+            light_constant=light_constant,
+            light_mean=light_mean,
+            light_range=light_range,
+            light_forcing_mode=light_forcing_mode,
         )
 
     @staticmethod
@@ -221,6 +249,40 @@ class ScenarioIO:
     def _parse_wind_use_constant(text: str) -> bool | None:
         for block in ScenarioIO._extract_state_blocks(text):
             if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Wind Loading":
+                raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
+                if raw is None:
+                    return None
+                return raw.upper() == "TRUE"
+        return None
+
+    @staticmethod
+    def _parse_light_series(text: str) -> Dict[datetime, float]:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Light":
+                return ScenarioIO._parse_time_series_from_block(block)
+        return {}
+
+    @staticmethod
+    def _parse_light_constant(text: str) -> float | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') != "Light":
+                continue
+            const_value = ScenarioIO._find_float(block, r'"ConstLoad":\s*([-\d.E+]+)')
+            if const_value is not None:
+                return const_value
+            return ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+        return None
+
+    @staticmethod
+    def _parse_light_mean_range(text: str) -> tuple[float | None, float | None]:
+        light_mean = ScenarioIO._find_float(text, r'"LightMean":\s*([-\d.E+]+)')
+        light_range = ScenarioIO._find_float(text, r'"LightRange":\s*([-\d.E+]+)')
+        return light_mean, light_range
+
+    @staticmethod
+    def _parse_light_use_constant(text: str) -> bool | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            if ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"') == "Light":
                 raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
                 if raw is None:
                     return None
@@ -311,6 +373,52 @@ class ScenarioIO:
                 return "constant"
             if raw in ("2", "default", "default_series", "default time series"):
                 return "default_series"
+            if raw in ("3", "time", "time-varying", "timevarying"):
+                return "time_varying"
+            print("Enter 1, 2, or 3.")
+
+    @staticmethod
+    def _choose_light_mode(
+        light_series: Dict[datetime, float],
+        light_constant: float | None,
+        light_mean: float | None,
+        light_range: float | None,
+        light_use_constant: bool | None,
+    ) -> str:
+        has_series = bool(light_series)
+        has_constant = light_constant is not None
+        has_mean_range = light_mean is not None and light_range is not None
+
+        if light_use_constant is True and has_constant:
+            return "constant"
+        if light_use_constant is False and has_series:
+            default_mode = "time_varying"
+        elif has_mean_range:
+            default_mode = "mean_range"
+        elif has_series:
+            default_mode = "time_varying"
+        elif has_constant:
+            default_mode = "constant"
+        else:
+            default_mode = "constant"
+
+        print("Light loading options:")
+        print("  1) Enter constant light")
+        print("  2) Use annual mean and range")
+        print("  3) Use time-varying light")
+        default_label = {
+            "constant": "1",
+            "mean_range": "2",
+            "time_varying": "3",
+        }[default_mode]
+        while True:
+            raw = input(f"Select light loading mode [default {default_label}]: ").strip().lower()
+            if raw == "":
+                return default_mode
+            if raw in ("1", "constant", "const"):
+                return "constant"
+            if raw in ("2", "mean", "mean_range", "annual", "range"):
+                return "mean_range"
             if raw in ("3", "time", "time-varying", "timevarying"):
                 return "time_varying"
             print("Enter 1, 2, or 3.")
@@ -860,6 +968,23 @@ class ScenarioIO:
             for t in keys:
                 wind_value = ScenarioIO._format_excel_number(wind_series.get(t))
                 w.writerow([t.strftime("%d.%m.%Y"), wind_value])
+
+    @staticmethod
+    def save_light_series(
+        light_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not light_series:
+            return
+        import csv
+
+        keys = sorted(light_series.keys())
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["time", "light_ly_d"])
+            for t in keys:
+                light_value = ScenarioIO._format_excel_number(light_series.get(t))
+                w.writerow([t.strftime("%d.%m.%Y"), light_value])
 
     @staticmethod
     def _format_excel_number(value: float | None) -> str:
