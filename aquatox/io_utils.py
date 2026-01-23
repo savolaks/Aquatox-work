@@ -25,6 +25,8 @@ class ScenarioIO:
         state_vars = ScenarioIO._parse_state_variables(text)
         if not state_vars:
             state_vars = ScenarioIO._prompt_state_variables()
+        if env.inorganic_solids_mode == "tss" and env.tss_initial is not None:
+            ScenarioIO._apply_tss_initial(state_vars, env.tss_initial)
 
         food_web = ScenarioIO._parse_foodweb_from_scenario(text)
         if food_web is None:
@@ -68,6 +70,10 @@ class ScenarioIO:
         ph_series = ScenarioIO._parse_ph_series(text)
         ph_constant = ScenarioIO._parse_ph_constant(text)
         ph_use_constant = ScenarioIO._parse_ph_use_constant(text)
+        tss_series = ScenarioIO._parse_tss_series(text)
+        tss_constant = ScenarioIO._parse_tss_constant(text)
+        tss_initial = ScenarioIO._parse_tss_initial(text)
+        tss_use_constant = ScenarioIO._parse_tss_use_constant(text)
         temp_forcing_mode = ScenarioIO._choose_temperature_mode(
             temp_epi_series,
             temp_hypo_series,
@@ -93,6 +99,11 @@ class ScenarioIO:
             ph_series,
             ph_constant,
             ph_use_constant,
+        )
+        inorganic_mode, tss_forcing_mode = ScenarioIO._choose_inorganic_solids_mode(
+            tss_series,
+            tss_constant,
+            tss_use_constant,
         )
 
         if volume is None:
@@ -161,6 +172,19 @@ class ScenarioIO:
                 "pH",
                 "pH value per day: ",
             )
+        if inorganic_mode == "tss":
+            if tss_forcing_mode == "constant" and tss_constant is None:
+                tss_constant = ScenarioIO._prompt_float("Enter constant TSS (mg/L): ")
+                if tss_initial is None:
+                    tss_initial = tss_constant
+            if tss_forcing_mode == "time_varying":
+                if tss_initial is None:
+                    tss_initial = ScenarioIO._prompt_float("Enter initial TSS (mg/L): ")
+                if not tss_series:
+                    tss_series = ScenarioIO._prompt_time_series(
+                        "TSS",
+                        "TSS value per day (mg/L): ",
+                    )
 
         return Environment(
             volume=volume,
@@ -190,6 +214,11 @@ class ScenarioIO:
             ph_series=ph_series,
             ph_constant=ph_constant,
             ph_forcing_mode=ph_forcing_mode,
+            tss_series=tss_series,
+            tss_constant=tss_constant,
+            tss_initial=tss_initial,
+            tss_forcing_mode=tss_forcing_mode,
+            inorganic_solids_mode=inorganic_mode,
         )
 
     @staticmethod
@@ -333,6 +362,55 @@ class ScenarioIO:
                 if raw is None:
                     return None
                 return raw.upper() == "TRUE"
+        return None
+
+    @staticmethod
+    def _parse_tss_series(text: str) -> Dict[datetime, float]:
+        block = ScenarioIO._find_tss_block(text)
+        if not block:
+            return {}
+        return ScenarioIO._parse_time_series_from_block(block)
+
+    @staticmethod
+    def _parse_tss_constant(text: str) -> float | None:
+        block = ScenarioIO._find_tss_block(text)
+        if not block:
+            return None
+        const_value = ScenarioIO._find_float(block, r'"ConstLoad":\s*([-\d.E+]+)')
+        if const_value is not None:
+            return const_value
+        return ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+
+    @staticmethod
+    def _parse_tss_initial(text: str) -> float | None:
+        block = ScenarioIO._find_tss_block(text)
+        if not block:
+            return None
+        return ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+
+    @staticmethod
+    def _parse_tss_use_constant(text: str) -> bool | None:
+        block = ScenarioIO._find_tss_block(text)
+        if not block:
+            return None
+        raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
+        if raw is None:
+            return None
+        return raw.upper() == "TRUE"
+
+    @staticmethod
+    def _find_tss_block(text: str) -> str | None:
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            lower = name.lower()
+            if lower == "tss":
+                return block
+            if "susp" in lower and "solid" in lower:
+                return block
+            if "total suspended" in lower:
+                return block
         return None
 
     @staticmethod
@@ -504,6 +582,54 @@ class ScenarioIO:
                 return "constant"
             if raw in ("2", "time", "time-varying", "timevarying"):
                 return "time_varying"
+            print("Enter 1 or 2.")
+
+    @staticmethod
+    def _choose_inorganic_solids_mode(
+        tss_series: Dict[datetime, float],
+        tss_constant: float | None,
+        tss_use_constant: bool | None,
+    ) -> tuple[str, str]:
+        has_series = bool(tss_series)
+        has_constant = tss_constant is not None
+
+        if tss_use_constant is True and has_constant:
+            default_tss_mode = "constant"
+        elif tss_use_constant is False and has_series:
+            default_tss_mode = "time_varying"
+        elif has_series:
+            default_tss_mode = "time_varying"
+        elif has_constant:
+            default_tss_mode = "constant"
+        else:
+            default_tss_mode = "constant"
+
+        print("Do you wish to simulate Inorganic Solids within the system?")
+        print("  1) No, don't simulate inorganics")
+        print("  2) Yes, simulate TSS")
+        print("  3) Yes, use Sand-Silt-Clay Model")
+        while True:
+            raw = input("Select inorganic solids mode [default 1]: ").strip().lower()
+            if raw == "" or raw in ("1", "no", "none"):
+                return "none", "none"
+            if raw in ("2", "tss", "yes"):
+                break
+            if raw in ("3", "sand", "sand-silt-clay", "sand silt clay"):
+                return "sand_silt_clay", "none"
+            print("Enter 1, 2, or 3.")
+
+        print("TSS options:")
+        print("  1) Enter constant TSS")
+        print("  2) Use time-varying TSS (annual wrap of series)")
+        default_label = "1" if default_tss_mode == "constant" else "2"
+        while True:
+            raw = input(f"Select TSS mode [default {default_label}]: ").strip().lower()
+            if raw == "":
+                return "tss", default_tss_mode
+            if raw in ("1", "constant", "const"):
+                return "tss", "constant"
+            if raw in ("2", "time", "time-varying", "timevarying"):
+                return "tss", "time_varying"
             print("Enter 1 or 2.")
 
     @staticmethod
@@ -803,6 +929,14 @@ class ScenarioIO:
         return blocks
 
     @staticmethod
+    def _apply_tss_initial(state_vars: list[StateVariable], tss_initial: float) -> None:
+        for sv in state_vars:
+            name = sv.name.lower()
+            if name == "tss" or ("susp" in name and "solid" in name) or "total suspended" in name:
+                sv.value = tss_initial
+                break
+
+    @staticmethod
     def _parse_time_series(series_blob: str) -> Dict[datetime, float]:
         entries = [seg.strip() for seg in series_blob.split(";") if seg.strip()]
         series: Dict[datetime, float] = {}
@@ -1085,6 +1219,53 @@ class ScenarioIO:
             for t in keys:
                 ph_value = ScenarioIO._format_excel_number(ph_series.get(t))
                 w.writerow([t.strftime("%d.%m.%Y"), ph_value])
+
+    @staticmethod
+    def save_tss_series(
+        tss_series: Dict[datetime, float],
+        file: str,
+    ) -> None:
+        if not tss_series:
+            return
+        import csv
+
+        keys = sorted(tss_series.keys())
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(["time", "tss_mg_l"])
+            for t in keys:
+                tss_value = ScenarioIO._format_excel_number(tss_series.get(t))
+                w.writerow([t.strftime("%d.%m.%Y"), tss_value])
+
+    @staticmethod
+    def save_all_series(
+        rows: list[tuple[datetime, dict]],
+        file: str,
+    ) -> None:
+        if not rows:
+            return
+        import csv
+
+        header = [
+            "time",
+            "volume_m3",
+            "inflow_m3_per_day",
+            "outflow_m3_per_day",
+            "temp_epi_degC",
+            "temp_hypo_degC",
+            "wind_m_s",
+            "light_ly_d",
+            "ph",
+            "tss_mg_l",
+        ]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for t, snapshot in rows:
+                w.writerow(
+                    [t.strftime("%d.%m.%Y")]
+                    + [ScenarioIO._format_excel_cell(snapshot.get(name, "")) for name in header[1:]]
+                )
 
     @staticmethod
     def _format_excel_number(value: float | None) -> str:

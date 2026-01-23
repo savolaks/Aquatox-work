@@ -57,6 +57,11 @@ class Environment:
     ph_series: Dict[Date, float] = field(default_factory=dict)
     ph_constant: float | None = None
     ph_forcing_mode: str = "constant"  # constant | time_varying
+    tss_series: Dict[Date, float] = field(default_factory=dict)
+    tss_constant: float | None = None
+    tss_initial: float | None = None
+    tss_forcing_mode: str = "none"  # none | constant | time_varying
+    inorganic_solids_mode: str = "none"  # none | tss | sand_silt_clay
     food_web: "FoodWeb | None" = None
 
     def get_inflow(self, t: Date) -> float:
@@ -136,6 +141,15 @@ class Environment:
                 return None
             return self._get_series_value(self.ph_series, t)
         return self.ph_constant
+
+    def get_tss(self, t: Date) -> float | None:
+        if self.tss_forcing_mode == "time_varying":
+            if not self.tss_series:
+                return None
+            return self._get_series_value(self.tss_series, t)
+        if self.tss_forcing_mode == "constant":
+            return self.tss_constant
+        return None
 
     def _default_wind_value(self, t: Date) -> float | None:
         if self.wind_mean is None:
@@ -362,6 +376,18 @@ class Simulation:
                 for sv in self.state_vars:
                     if sv.name.lower() == "ph":
                         sv.value = ph_value
+                        break
+            if self.env.inorganic_solids_mode == "tss":
+                tss_value = self.env.get_tss(t)
+                if tss_value is None:
+                    raise ValueError(
+                        "TSS forcing requires full coverage; "
+                        "provide a time series or constant."
+                    )
+                for sv in self.state_vars:
+                    name = sv.name.lower()
+                    if name == "tss" or ("susp" in name and "solid" in name) or "total suspended" in name:
+                        sv.value = tss_value
                         break
 
             # 1) integrate biological/chemical compartments
