@@ -28,6 +28,13 @@ class ScenarioIO:
         if env.inorganic_solids_mode == "tss" and env.tss_initial is not None:
             ScenarioIO._apply_tss_initial(state_vars, env.tss_initial)
 
+        env.chemicals = ScenarioIO._parse_chemicals(text)
+        env.chemical_states = ScenarioIO._parse_chemical_states(text, env.chemicals)
+        env.inflow_loadings = ScenarioIO._parse_inflow_loadings(text)
+        env.direct_precip_loadings = ScenarioIO._parse_direct_precip_loadings(text)
+        env.point_source_loadings = ScenarioIO._parse_point_source_loadings(text)
+        env.nonpoint_source_loadings = ScenarioIO._parse_nonpoint_source_loadings(text)
+
         food_web = ScenarioIO._parse_foodweb_from_scenario(text)
         if food_web is None:
             resolved_food_web = None
@@ -937,6 +944,223 @@ class ScenarioIO:
                 break
 
     @staticmethod
+    def _parse_inflow_loadings(text: str) -> list[dict]:
+        loadings: list[dict] = []
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            no_user_load_raw = ScenarioIO._find_str(block, r'"NoUserLoad":\s*(TRUE|FALSE)')
+            use_constant_raw = ScenarioIO._find_str(block, r'"UseConstant":\s*(TRUE|FALSE)')
+            const_load = ScenarioIO._find_float(block, r'"ConstLoad":\s*([-\d.E+]+)')
+            mult_ldg = ScenarioIO._find_float(block, r'"MultLdg":\s*([-\d.E+]+)')
+            units = ScenarioIO._find_str(block, r'"LoadingUnit":\s*"([^"]+)"')
+            if units is None:
+                units = ScenarioIO._find_str(block, r'"StateUnit":\s*"([^"]+)"') or "arb"
+            series = ScenarioIO._parse_time_series_from_block(block)
+
+            loadings.append(
+                {
+                    "name": name,
+                    "units": units,
+                    "no_user_load": True if no_user_load_raw == "TRUE" else False,
+                    "use_constant": True if use_constant_raw == "TRUE" else False,
+                    "const_load": const_load,
+                    "mult_ldg": mult_ldg,
+                    "series": series,
+                }
+            )
+        return loadings
+
+    @staticmethod
+    def _extract_loadings_section(block: str, label: str) -> str | None:
+        pattern = (
+            rf"{re.escape(label)}\s*(.+?)(?=\n\s*Point Source Loadings:|\n\s*Direct Precip Loadings:|"
+            r"\n\s*NonPoint Source Loadings:|\n\s*\"PRequiresData\^\"|\n\s*\"StateUnit\"|$)"
+        )
+        match = re.search(pattern, block, re.DOTALL)
+        if not match:
+            return None
+        return match.group(1)
+
+    @staticmethod
+    def _parse_alt_loadings_section(section: str) -> dict:
+        use_constant_raw = ScenarioIO._find_str(section, r'"Alt_UseConstant":\s*(TRUE|FALSE)')
+        const_load = ScenarioIO._find_float(section, r'"Alt_ConstLoad":\s*([-\d.E+]+)')
+        mult_ldg = ScenarioIO._find_float(section, r'"Alt_MultLdg":\s*([-\d.E+]+)')
+        series = {}
+        match = re.search(
+            r"Alt\.\s*Time Series Loadings:\s*n=\d+;(.+?)(?=\n\s*\"Alt_MultLdg\"|$)",
+            section,
+            re.DOTALL,
+        )
+        if match:
+            series = ScenarioIO._parse_time_series(match.group(1).strip())
+        return {
+            "use_constant": True if use_constant_raw == "TRUE" else False,
+            "const_load": const_load,
+            "mult_ldg": mult_ldg,
+            "series": series,
+        }
+
+    @staticmethod
+    def _parse_direct_precip_loadings(text: str) -> list[dict]:
+        loadings: list[dict] = []
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            no_user_load_raw = ScenarioIO._find_str(block, r'"NoUserLoad":\s*(TRUE|FALSE)')
+            units = ScenarioIO._find_str(block, r'"LoadingUnit":\s*"([^"]+)"')
+            if units is None:
+                units = ScenarioIO._find_str(block, r'"StateUnit":\s*"([^"]+)"') or "arb"
+
+            section = ScenarioIO._extract_loadings_section(block, "Direct Precip Loadings:")
+            if section is None:
+                continue
+            parsed = ScenarioIO._parse_alt_loadings_section(section)
+
+            loadings.append(
+                {
+                    "name": name,
+                    "units": units,
+                    "no_user_load": True if no_user_load_raw == "TRUE" else False,
+                    "use_constant": parsed["use_constant"],
+                    "const_load": parsed["const_load"],
+                    "mult_ldg": parsed["mult_ldg"],
+                    "series": parsed["series"],
+                }
+            )
+        return loadings
+
+    @staticmethod
+    def _parse_point_source_loadings(text: str) -> list[dict]:
+        loadings: list[dict] = []
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            no_user_load_raw = ScenarioIO._find_str(block, r'"NoUserLoad":\s*(TRUE|FALSE)')
+            units = ScenarioIO._find_str(block, r'"LoadingUnit":\s*"([^"]+)"')
+            if units is None:
+                units = ScenarioIO._find_str(block, r'"StateUnit":\s*"([^"]+)"') or "arb"
+
+            section = ScenarioIO._extract_loadings_section(block, "Point Source Loadings:")
+            if section is None:
+                continue
+            parsed = ScenarioIO._parse_alt_loadings_section(section)
+
+            loadings.append(
+                {
+                    "name": name,
+                    "units": units,
+                    "no_user_load": True if no_user_load_raw == "TRUE" else False,
+                    "use_constant": parsed["use_constant"],
+                    "const_load": parsed["const_load"],
+                    "mult_ldg": parsed["mult_ldg"],
+                    "series": parsed["series"],
+                }
+            )
+        return loadings
+
+    @staticmethod
+    def _parse_nonpoint_source_loadings(text: str) -> list[dict]:
+        loadings: list[dict] = []
+        for block in ScenarioIO._extract_state_blocks(text):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            no_user_load_raw = ScenarioIO._find_str(block, r'"NoUserLoad":\s*(TRUE|FALSE)')
+            units = ScenarioIO._find_str(block, r'"LoadingUnit":\s*"([^"]+)"')
+            if units is None:
+                units = ScenarioIO._find_str(block, r'"StateUnit":\s*"([^"]+)"') or "arb"
+
+            section = ScenarioIO._extract_loadings_section(block, "NonPoint Source Loadings:")
+            if section is None:
+                continue
+            parsed = ScenarioIO._parse_alt_loadings_section(section)
+
+            loadings.append(
+                {
+                    "name": name,
+                    "units": units,
+                    "no_user_load": True if no_user_load_raw == "TRUE" else False,
+                    "use_constant": parsed["use_constant"],
+                    "const_load": parsed["const_load"],
+                    "mult_ldg": parsed["mult_ldg"],
+                    "series": parsed["series"],
+                }
+            )
+        return loadings
+
+    @staticmethod
+    def _parse_chemicals(text: str) -> list[dict]:
+        loadchem_map: Dict[int, bool] = {}
+        for match in re.finditer(r'"LoadChem(\d+)":\s*(TRUE|FALSE)', text):
+            idx = int(match.group(1))
+            loadchem_map[idx] = match.group(2).upper() == "TRUE"
+
+        chemicals: list[dict] = []
+        for idx, block in enumerate(ScenarioIO._extract_blocks(text, "ChemicalRecord"), start=1):
+            name = ScenarioIO._find_str(block, r'"ChemName":\s*"([^"]+)"')
+            if not name:
+                continue
+            active = loadchem_map.get(idx, True if not loadchem_map else False)
+            chemicals.append({"index": idx, "name": name, "active": active})
+
+        if chemicals:
+            return chemicals
+
+        for block in ScenarioIO._extract_blocks(text, "TToxics"):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            match = re.search(r"tox\s*(\d+)\s*:\s*\[([^\]]+)\]", name, re.IGNORECASE)
+            if not match:
+                continue
+            idx = int(match.group(1))
+            chem_name = match.group(2).strip()
+            chemicals.append({"index": idx, "name": chem_name, "active": True})
+
+        chemicals.sort(key=lambda item: item["index"])
+        return chemicals
+
+    @staticmethod
+    def _parse_chemical_states(text: str, chemicals: list[dict]) -> list[dict]:
+        chem_name_by_index = {item["index"]: item["name"] for item in chemicals}
+        states: list[dict] = []
+        for block in ScenarioIO._extract_blocks(text, "TToxics"):
+            name = ScenarioIO._find_str(block, r'"PName\^":\s*"([^"]+)"')
+            if not name:
+                continue
+            initial = ScenarioIO._find_float(block, r'"InitialCond":\s*([-\d.E+]+)')
+            if initial is None:
+                continue
+            units = ScenarioIO._find_str(block, r'"StateUnit":\s*"([^"]+)"') or "arb"
+            carrier = ScenarioIO._find_int(block, r'"Carrier":\s*(\d+)')
+            ppb = ScenarioIO._find_float(block, r'"ppb":\s*([-\d.E+]+)')
+            chem_index = None
+            chem_name = None
+            match = re.search(r"tox\s*(\d+)\s*:\s*\[([^\]]+)\]", name, re.IGNORECASE)
+            if match:
+                chem_index = int(match.group(1))
+                chem_name = match.group(2).strip()
+            if chem_index is not None and chem_name is None:
+                chem_name = chem_name_by_index.get(chem_index)
+            states.append(
+                {
+                    "name": name,
+                    "initial": initial,
+                    "units": units,
+                    "carrier": carrier,
+                    "ppb": ppb,
+                    "chem_index": chem_index,
+                    "chem_name": chem_name,
+                }
+            )
+        return states
+
+    @staticmethod
     def _parse_time_series(series_blob: str) -> Dict[datetime, float]:
         entries = [seg.strip() for seg in series_blob.split(";") if seg.strip()]
         series: Dict[datetime, float] = {}
@@ -1236,6 +1460,252 @@ class ScenarioIO:
             for t in keys:
                 tss_value = ScenarioIO._format_excel_number(tss_series.get(t))
                 w.writerow([t.strftime("%d.%m.%Y"), tss_value])
+
+    @staticmethod
+    def save_chemical_states(
+        states: list[dict],
+        file: str,
+    ) -> None:
+        if not states:
+            return
+        import csv
+
+        header = ["name", "initial", "units", "carrier", "ppb", "chem_index", "chem_name"]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for state in states:
+                w.writerow(
+                    [
+                        state.get("name", ""),
+                        ScenarioIO._format_excel_cell(state.get("initial", "")),
+                        state.get("units", ""),
+                        ScenarioIO._format_excel_cell(state.get("carrier", "")),
+                        ScenarioIO._format_excel_cell(state.get("ppb", "")),
+                        ScenarioIO._format_excel_cell(state.get("chem_index", "")),
+                        state.get("chem_name", ""),
+                    ]
+                )
+
+    @staticmethod
+    def save_inflow_loadings(
+        loadings: list[dict],
+        file: str,
+    ) -> None:
+        if not loadings:
+            return
+        import csv
+
+        header = [
+            "name",
+            "mode",
+            "date",
+            "value",
+            "units",
+            "mult_ldg",
+            "no_user_load",
+        ]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for record in loadings:
+                name = record.get("name", "")
+                units = record.get("units", "")
+                mult_ldg = ScenarioIO._format_excel_cell(record.get("mult_ldg", ""))
+                no_user_load = "TRUE" if record.get("no_user_load") else "FALSE"
+                series = record.get("series") or {}
+                if series:
+                    for t, value in sorted(series.items()):
+                        w.writerow(
+                            [
+                                name,
+                                "series",
+                                t.strftime("%d.%m.%Y"),
+                                ScenarioIO._format_excel_cell(value),
+                                units,
+                                mult_ldg,
+                                no_user_load,
+                            ]
+                        )
+                else:
+                    const_value = record.get("const_load", "")
+                    mode = "constant" if record.get("use_constant") else "none"
+                    w.writerow(
+                        [
+                            name,
+                            mode,
+                            "",
+                            ScenarioIO._format_excel_cell(const_value),
+                            units,
+                            mult_ldg,
+                            no_user_load,
+                        ]
+                    )
+
+    @staticmethod
+    def save_direct_precip_loadings(
+        loadings: list[dict],
+        file: str,
+    ) -> None:
+        if not loadings:
+            return
+        import csv
+
+        header = [
+            "name",
+            "mode",
+            "date",
+            "value",
+            "units",
+            "mult_ldg",
+            "no_user_load",
+        ]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for record in loadings:
+                name = record.get("name", "")
+                units = record.get("units", "")
+                mult_ldg = ScenarioIO._format_excel_cell(record.get("mult_ldg", ""))
+                no_user_load = "TRUE" if record.get("no_user_load") else "FALSE"
+                series = record.get("series") or {}
+                if series:
+                    for t, value in sorted(series.items()):
+                        w.writerow(
+                            [
+                                name,
+                                "series",
+                                t.strftime("%d.%m.%Y"),
+                                ScenarioIO._format_excel_cell(value),
+                                units,
+                                mult_ldg,
+                                no_user_load,
+                            ]
+                        )
+                else:
+                    const_value = record.get("const_load", "")
+                    mode = "constant" if record.get("use_constant") else "none"
+                    w.writerow(
+                        [
+                            name,
+                            mode,
+                            "",
+                            ScenarioIO._format_excel_cell(const_value),
+                            units,
+                            mult_ldg,
+                            no_user_load,
+                        ]
+                    )
+
+    @staticmethod
+    def save_point_source_loadings(
+        loadings: list[dict],
+        file: str,
+    ) -> None:
+        if not loadings:
+            return
+        import csv
+
+        header = [
+            "name",
+            "mode",
+            "date",
+            "value",
+            "units",
+            "mult_ldg",
+            "no_user_load",
+        ]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for record in loadings:
+                name = record.get("name", "")
+                units = record.get("units", "")
+                mult_ldg = ScenarioIO._format_excel_cell(record.get("mult_ldg", ""))
+                no_user_load = "TRUE" if record.get("no_user_load") else "FALSE"
+                series = record.get("series") or {}
+                if series:
+                    for t, value in sorted(series.items()):
+                        w.writerow(
+                            [
+                                name,
+                                "series",
+                                t.strftime("%d.%m.%Y"),
+                                ScenarioIO._format_excel_cell(value),
+                                units,
+                                mult_ldg,
+                                no_user_load,
+                            ]
+                        )
+                else:
+                    const_value = record.get("const_load", "")
+                    mode = "constant" if record.get("use_constant") else "none"
+                    w.writerow(
+                        [
+                            name,
+                            mode,
+                            "",
+                            ScenarioIO._format_excel_cell(const_value),
+                            units,
+                            mult_ldg,
+                            no_user_load,
+                        ]
+                    )
+
+    @staticmethod
+    def save_nonpoint_source_loadings(
+        loadings: list[dict],
+        file: str,
+    ) -> None:
+        if not loadings:
+            return
+        import csv
+
+        header = [
+            "name",
+            "mode",
+            "date",
+            "value",
+            "units",
+            "mult_ldg",
+            "no_user_load",
+        ]
+        with open(file, "w", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(header)
+            for record in loadings:
+                name = record.get("name", "")
+                units = record.get("units", "")
+                mult_ldg = ScenarioIO._format_excel_cell(record.get("mult_ldg", ""))
+                no_user_load = "TRUE" if record.get("no_user_load") else "FALSE"
+                series = record.get("series") or {}
+                if series:
+                    for t, value in sorted(series.items()):
+                        w.writerow(
+                            [
+                                name,
+                                "series",
+                                t.strftime("%d.%m.%Y"),
+                                ScenarioIO._format_excel_cell(value),
+                                units,
+                                mult_ldg,
+                                no_user_load,
+                            ]
+                        )
+                else:
+                    const_value = record.get("const_load", "")
+                    mode = "constant" if record.get("use_constant") else "none"
+                    w.writerow(
+                        [
+                            name,
+                            mode,
+                            "",
+                            ScenarioIO._format_excel_cell(const_value),
+                            units,
+                            mult_ldg,
+                            no_user_load,
+                        ]
+                    )
 
     @staticmethod
     def save_all_series(

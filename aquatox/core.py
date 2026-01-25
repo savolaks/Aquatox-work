@@ -63,6 +63,12 @@ class Environment:
     tss_forcing_mode: str = "none"  # none | constant | time_varying
     inorganic_solids_mode: str = "none"  # none | tss | sand_silt_clay
     food_web: "FoodWeb | None" = None
+    chemicals: list[dict] = field(default_factory=list)
+    chemical_states: list[dict] = field(default_factory=list)
+    inflow_loadings: list[dict] = field(default_factory=list)
+    direct_precip_loadings: list[dict] = field(default_factory=list)
+    point_source_loadings: list[dict] = field(default_factory=list)
+    nonpoint_source_loadings: list[dict] = field(default_factory=list)
 
     def get_inflow(self, t: Date) -> float:
         return self._get_series_value(self.inflow_series, t)

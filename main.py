@@ -86,6 +86,26 @@ def main() -> None:
         help="Optional CSV output path for simulated TSS output.",
     )
     parser.add_argument(
+        "--chem-output",
+        help="Optional CSV output path for chemical initial conditions.",
+    )
+    parser.add_argument(
+        "--inflow-loadings-output",
+        help="Optional CSV output path for inflow loadings.",
+    )
+    parser.add_argument(
+        "--direct-precip-output",
+        help="Optional CSV output path for direct precipitation loadings.",
+    )
+    parser.add_argument(
+        "--point-source-output",
+        help="Optional CSV output path for point-source loadings.",
+    )
+    parser.add_argument(
+        "--nonpoint-source-output",
+        help="Optional CSV output path for nonpoint-source loadings.",
+    )
+    parser.add_argument(
         "--all-series-output",
         help="Optional CSV output path for combined forcing series output.",
     )
@@ -124,6 +144,51 @@ def main() -> None:
     print(f"  tss_forcing_mode = {env.tss_forcing_mode}")
     print(f"  inorganic_solids_mode = {env.inorganic_solids_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
+    print(f"  chemicals loaded = {len(env.chemicals)}")
+    print(f"  inflow loadings entries = {len(env.inflow_loadings)}")
+    print(f"  direct precip loadings entries = {len(env.direct_precip_loadings)}")
+    print(f"  point-source loadings entries = {len(env.point_source_loadings)}")
+    print(f"  nonpoint-source loadings entries = {len(env.nonpoint_source_loadings)}")
+
+    if args.chem_output:
+        if env.chemical_states:
+            ScenarioIO.save_chemical_states(env.chemical_states, args.chem_output)
+            print(f"Wrote chemical initial conditions to: {args.chem_output}")
+        else:
+            print("No chemical state variables found; skipping chemical output.")
+    if args.inflow_loadings_output:
+        if env.inflow_loadings:
+            ScenarioIO.save_inflow_loadings(env.inflow_loadings, args.inflow_loadings_output)
+            print(f"Wrote inflow loadings to: {args.inflow_loadings_output}")
+        else:
+            print("No inflow loadings found; skipping inflow loading output.")
+    if args.direct_precip_output:
+        if env.direct_precip_loadings:
+            ScenarioIO.save_direct_precip_loadings(
+                env.direct_precip_loadings,
+                args.direct_precip_output,
+            )
+            print(f"Wrote direct precipitation loadings to: {args.direct_precip_output}")
+        else:
+            print("No direct precipitation loadings found; skipping output.")
+    if args.point_source_output:
+        if env.point_source_loadings:
+            ScenarioIO.save_point_source_loadings(
+                env.point_source_loadings,
+                args.point_source_output,
+            )
+            print(f"Wrote point-source loadings to: {args.point_source_output}")
+        else:
+            print("No point-source loadings found; skipping output.")
+    if args.nonpoint_source_output:
+        if env.nonpoint_source_loadings:
+            ScenarioIO.save_nonpoint_source_loadings(
+                env.nonpoint_source_loadings,
+                args.nonpoint_source_output,
+            )
+            print(f"Wrote nonpoint-source loadings to: {args.nonpoint_source_output}")
+        else:
+            print("No nonpoint-source loadings found; skipping output.")
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
     if not series_keys:
