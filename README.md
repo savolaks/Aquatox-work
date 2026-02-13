@@ -38,9 +38,8 @@ The code is intentionally scoped and stable for batch runs and inspection.
   supports future expansion.
 
 ### Food Web Support
-- Food web is parsed from:
-  - in-scenario trophic interactions, or
-  - external interspecies CSV (`AQ_Species_Models.cn`)
+- Food web is parsed primarily from in-scenario trophic interactions.
+- External interspecies CSV (`AQ_Species_Models.cn`) is used only as a fallback.
 - Export of 2D matrices:
   - preferences (raw and normalized)
   - egestion coefficients
