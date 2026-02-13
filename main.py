@@ -45,7 +45,7 @@ def _normalize_matrix(matrix):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Simulate AQUATOX water volume using inflow/outflow time series."
+        description="Simulate AQUATOX and export either all variables to CSV or the food web to Excel."
     )
     parser.add_argument(
         "-i",
@@ -56,46 +56,18 @@ def main() -> None:
     parser.add_argument("--start", help="Start date (dd/mm/yyyy or d.m.yyyy).")
     parser.add_argument("--end", help="End date (dd/mm/yyyy or d.m.yyyy).")
     parser.add_argument("--dt", type=float, default=1.0, help="Time step in days.")
-    parser.add_argument("-o", "--output", help="Optional CSV output path.")
-    parser.add_argument(
-        "--series-output",
-        help="Optional CSV output path for inflow/outflow time series.",
-    )
-    parser.add_argument(
-        "--temp-series-output",
-        help="Optional CSV output path for epilimnion/hypolimnion temperature series.",
-    )
-    parser.add_argument(
-        "--temperature-output",
-        help="Optional CSV output path for simulated temperature output.",
-    )
-    parser.add_argument(
-        "--wind-output",
-        help="Optional CSV output path for simulated wind output.",
-    )
-    parser.add_argument(
-        "--light-output",
-        help="Optional CSV output path for simulated light output.",
-    )
-    parser.add_argument(
-        "--ph-output",
-        help="Optional CSV output path for simulated pH output.",
-    )
-    parser.add_argument(
-        "--tss-output",
-        help="Optional CSV output path for simulated TSS output.",
-    )
-    parser.add_argument(
-        "--all-series-output",
-        help="Optional CSV output path for combined forcing series output.",
-    )
     parser.add_argument(
         "--food-web",
         help="Optional interspecies CSV (.cn). Defaults to AQ_Species_Models.cn in cwd.",
     )
-    parser.add_argument(
-        "--foodweb-output",
-        help="Optional Excel output path (.xml or .xlsx) for 2D food web matrices.",
+    output_group = parser.add_mutually_exclusive_group(required=True)
+    output_group.add_argument(
+        "--all-series-csv",
+        help="CSV output path for all simulation variables.",
+    )
+    output_group.add_argument(
+        "--foodweb-excel",
+        help="Excel output path (.xml or .xlsx) for 2D food web matrices.",
     )
     args = parser.parse_args()
 
@@ -139,116 +111,49 @@ def main() -> None:
     print("Final volume (m^3):", env.volume)
     print(f"Simulated steps: {len(results)}")
 
-    if args.output:
-        ScenarioIO.save_waterflow_output(results, args.output)
-        print(f"Wrote CSV output to: {args.output}")
-        series_output = args.series_output
-        if series_output is None:
-            out_path = Path(args.output)
-            series_output = str(out_path.with_name(out_path.stem + "_series.csv"))
-        ScenarioIO.save_inflow_outflow_series(
-            env.inflow_series,
-            env.outflow_series,
-            series_output,
-        )
-        print(f"Wrote inflow/outflow series to: {series_output}")
-        if args.temperature_output is None:
-            out_path = Path(args.output)
-            args.temperature_output = str(out_path.with_name(out_path.stem + "_temperature.csv"))
+    confirm = input("Export outputs now? [y/N] ").strip().lower()
+    if confirm not in ("y", "yes"):
+        print("Export skipped by user.")
+        return
 
-    if args.temp_series_output:
-        ScenarioIO.save_temperature_series(
-            env.temp_epi_series,
-            env.temp_hypo_series,
-            args.temp_series_output,
-        )
-        print(f"Wrote temperature series to: {args.temp_series_output}")
-
-    if args.temperature_output:
-        sim = Simulation(env=env, state_vars=state_vars, solver=ODESolver(method="Euler"))
-        sim.run(time_end=end, dt_days=args.dt)
-        ScenarioIO.save_output(sim.output_results(), args.temperature_output)
-        print(f"Wrote temperature output to: {args.temperature_output}")
-
-    if args.wind_output:
-        wind_series = {}
-        t = start
-        while t < end:
-            wind_value = env.get_wind(t)
-            if wind_value is not None:
-                wind_series[t] = wind_value
-            t = t + timedelta(days=args.dt)
-        ScenarioIO.save_wind_series(wind_series, args.wind_output)
-        print(f"Wrote wind output to: {args.wind_output}")
-
-    if args.light_output:
-        light_series = {}
-        t = start
-        while t < end:
-            light_value = env.get_light(t)
-            if light_value is not None:
-                light_series[t] = light_value
-            t = t + timedelta(days=args.dt)
-        ScenarioIO.save_light_series(light_series, args.light_output)
-        print(f"Wrote light output to: {args.light_output}")
-
-    if args.ph_output:
-        ph_series = {}
-        t = start
-        while t < end:
-            ph_value = env.get_ph(t)
-            if ph_value is not None:
-                ph_series[t] = ph_value
-            t = t + timedelta(days=args.dt)
-        ScenarioIO.save_ph_series(ph_series, args.ph_output)
-        print(f"Wrote pH output to: {args.ph_output}")
-
-    if args.tss_output:
-        tss_series = {}
-        t = start
-        while t < end:
-            tss_value = env.get_tss(t)
-            if tss_value is not None:
-                tss_series[t] = tss_value
-            t = t + timedelta(days=args.dt)
-        ScenarioIO.save_tss_series(tss_series, args.tss_output)
-        print(f"Wrote TSS output to: {args.tss_output}")
-
-    if args.all_series_output:
+    if args.all_series_csv:
         rows = []
-        volume = env.volume
-        t = start
-        while t < end:
-            inflow = env.get_inflow(t)
-            outflow = env.get_outflow(t)
-            volume += (inflow - outflow) * args.dt
+        for t, snapshot in results:
             temp_epi = None
             temp_hypo = None
-            if env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
+            if env.temp_epi_series:
+                temp_epi = env._get_series_value(env.temp_epi_series, t)
+                if env.temp_hypo_series:
+                    temp_hypo = env._get_series_value(env.temp_hypo_series, t)
+                else:
+                    temp_hypo = temp_epi
+            elif env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
                 epi_value, hypo_value, _ = env.get_temperature_pair(t)
                 temp_epi = epi_value
                 temp_hypo = hypo_value
+            ph_value = (
+                env._get_series_value(env.ph_series, t) if env.ph_series else env.get_ph(t)
+            )
             rows.append(
                 (
                     t,
                     {
-                        "volume_m3": volume,
-                        "inflow_m3_per_day": inflow,
-                        "outflow_m3_per_day": outflow,
+                        "volume_m3": snapshot.get("volume_m3"),
+                        "inflow_m3_per_day": snapshot.get("inflow_m3_per_day"),
+                        "outflow_m3_per_day": snapshot.get("outflow_m3_per_day"),
                         "temp_epi_degC": temp_epi,
                         "temp_hypo_degC": temp_hypo,
                         "wind_m_s": env.get_wind(t),
                         "light_ly_d": env.get_light(t),
-                        "ph": env.get_ph(t),
+                        "ph": ph_value,
                         "tss_mg_l": env.get_tss(t),
                     },
                 )
             )
-            t = t + timedelta(days=args.dt)
-        ScenarioIO.save_all_series(rows, args.all_series_output)
-        print(f"Wrote all series output to: {args.all_series_output}")
+        ScenarioIO.save_all_series(rows, args.all_series_csv)
+        print(f"Wrote all series output to: {args.all_series_csv}")
 
-    if args.foodweb_output:
+    if args.foodweb_excel:
         if env.food_web is None:
             print("Food web not available; skipping food web export.")
         else:
@@ -261,14 +166,14 @@ def main() -> None:
                 pref_table_norm = _build_matrix_table(names, _normalize_matrix(preferences))
                 egestion_table = _build_matrix_table(names, egestion)
                 write_excel(
-                    args.foodweb_output,
+                    args.foodweb_excel,
                     {
                         "Preferences (Raw)": pref_table_raw,
                         "Preferences (Normalized)": pref_table_norm,
                         "Egestion Coefficients": egestion_table,
                     },
                 )
-                print(f"Wrote food web Excel XML to: {args.foodweb_output}")
+                print(f"Wrote food web Excel XML to: {args.foodweb_excel}")
 
 if __name__ == "__main__":
     main()
