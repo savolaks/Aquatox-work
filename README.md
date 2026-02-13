@@ -122,7 +122,27 @@ python main.py --food-web "AQ_Species_Models.cn" --foodweb-excel foodweb_export.
 - `aquatox/io_utils.py`: scenario parsing, series handling, CSV writing.
 - `aquatox/state.py`: state variable hierarchy.
 
+## Class Roles (Core Components)
+- `Environment`: Holds lake geometry, forcing series, and helper accessors
+  (inflow/outflow, temperature, wind, light, pH, TSS).
+- `Simulation`: Orchestrates the time loop, updates state variables, applies
+  forcing values, and advances the water balance.
+- `ODESolver`: Integrates state variables in time (Euler method in this branch).
+- `ScenarioIO`: Parses scenario files, loads time series, and writes CSV exports.
+- `StateVariable` and subclasses: Represent modeled constituents (nutrients,
+  detritus, plants, animals) and define rate-of-change interfaces.
+
+## Reference Manuals (Time Series Generation)
+The time series imported and exported by this code (e.g., inflow/outflow,
+temperature, wind, light, pH, TSS) are produced according to AQUATOX
+manual guidance. See:
+- `AQUATOX Users Manual.html`
+- `user-s-manual-3-1.pdf`
+
 ## Current Limitations
 - Only Euler integration is implemented.
+- The Euler solver has not been meaningfully tested in this branch because
+  the current state-variable rates are placeholders and do not yet exercise
+  the solver with dynamic processes.
 - Many biological/chemical process rates are placeholders.
 - Export is intentionally limited to one output mode at a time.
