@@ -422,41 +422,59 @@ class ScenarioIO:
         hypo_mean: float | None,
         hypo_range: float | None,
     ) -> str:
-        has_series = bool(epi_series) or bool(hypo_series)
+        has_series = bool(epi_series)
         has_mean_range = (
             epi_mean is not None
             and epi_range is not None
             and hypo_mean is not None
             and hypo_range is not None
         )
-        if not has_series and not has_mean_range:
-            return "constant"
+        has_constant = True  # constants can always be prompted if missing
+
         if has_series:
-            prompt = "Use time-series forcing for temperature? [Y/n]: "
-            while True:
-                raw = input(prompt).strip().lower()
-                if raw in ("", "y", "yes"):
-                    interp_prompt = "Allow interpolation for missing dates? [Y/n]: "
-                    while True:
-                        interp_raw = input(interp_prompt).strip().lower()
-                        if interp_raw in ("", "y", "yes"):
-                            return "series_interpolate"
-                        if interp_raw in ("n", "no"):
-                            return "series"
-                        print("Enter y or n.")
-                if raw in ("n", "no"):
-                    break
-                print("Enter y or n.")
-        if has_mean_range:
-            prompt = "Use annual mean/range for temperature? [Y/n]: "
-            while True:
-                raw = input(prompt).strip().lower()
-                if raw in ("", "y", "yes"):
-                    return "mean_range"
-                if raw in ("n", "no"):
-                    break
-                print("Enter y or n.")
-        return "constant"
+            default_mode = "series_interpolate"
+        elif has_mean_range:
+            default_mode = "mean_range"
+        else:
+            default_mode = "constant"
+
+        print("Temperature forcing options:")
+        print("  1) Enter constant epilimnion/hypolimnion temperature")
+        print("  2) Use time-varying temperature (exact series lookup)")
+        print("  3) Use time-varying temperature (interpolate missing dates)")
+        print("  4) Use annual mean/range (seasonal curve)")
+        default_label = {
+            "constant": "1",
+            "series": "2",
+            "series_interpolate": "3",
+            "mean_range": "4",
+        }[default_mode]
+
+        while True:
+            raw = input(f"Select temperature mode [default {default_label}]: ").strip().lower()
+            if raw == "":
+                selected = default_mode
+            elif raw in ("1", "constant", "const"):
+                selected = "constant"
+            elif raw in ("2", "series", "time", "time-varying", "timevarying"):
+                selected = "series"
+            elif raw in ("3", "series_interpolate", "interpolate", "interp"):
+                selected = "series_interpolate"
+            elif raw in ("4", "mean_range", "mean/range", "mean"):
+                selected = "mean_range"
+            else:
+                print("Enter 1, 2, 3, or 4.")
+                continue
+
+            if selected in ("series", "series_interpolate") and not has_series:
+                print("Time-series temperature data not found in scenario; choose 1 or 4.")
+                continue
+            if selected == "mean_range" and not has_mean_range:
+                print("Temperature mean/range values not found in scenario; values will be prompted.")
+            if selected == "constant" and not has_constant:
+                print("Constant temperature mode unavailable.")
+                continue
+            return selected
 
     @staticmethod
     def _choose_wind_mode(
@@ -470,8 +488,8 @@ class ScenarioIO:
         has_mean = wind_mean is not None
 
         if wind_use_constant is True and has_constant:
-            return "constant"
-        if wind_use_constant is False and (has_series or has_mean):
+            default_mode = "constant"
+        elif wind_use_constant is False and (has_series or has_mean):
             default_mode = "time_varying"
         elif has_mean:
             default_mode = "default_series"

@@ -320,12 +320,14 @@ class Simulation:
         solver = ODESolver(method="Euler")
         return cls(env=env, state_vars=svs, solver=solver)
 
-    def run(self, time_end: Date, dt_days: float) -> None:
+    def run(self, time_end: Date, dt_days: float, time_start: Date | None = None) -> None:
         """Main loop: update env volume via flows; integrate states."""
         if not self.state_vars:
             return
-        # Decide start time from earliest inflow key or now if absent
-        if self.env.inflow_series:
+        # Decide start time from explicit argument, flow series, or now.
+        if time_start is not None:
+            t = time_start
+        elif self.env.inflow_series:
             t = min(self.env.inflow_series.keys())
         elif self.env.outflow_series:
             t = min(self.env.outflow_series.keys())
@@ -333,62 +335,61 @@ class Simulation:
             t = datetime.utcnow()
 
         while t < time_end:
+            epi_temp = None
+            hypo_temp = None
+            stratified = False
+            wind_value = None
+            light_value = None
+            ph_value = None
+            tss_value = None
+
             if self.env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
                 epi_temp, hypo_temp, stratified = self.env.get_temperature_pair(t)
-                if epi_temp is None or hypo_temp is None:
-                    raise ValueError(
-                        "Temperature forcing requires full coverage; "
-                        "provide a complete time series or use mean/range or constant."
+                if (epi_temp is None or hypo_temp is None) and self.env.temp_epi_series:
+                    epi_temp = self.env._get_series_value(self.env.temp_epi_series, t)
+                    if self.env.temp_hypo_series:
+                        hypo_temp = self.env._get_series_value(self.env.temp_hypo_series, t)
+                    else:
+                        hypo_temp = epi_temp
+                    stratified = (
+                        epi_temp is not None
+                        and hypo_temp is not None
+                        and abs(epi_temp - hypo_temp) > 3.0
                     )
-                for sv in self.state_vars:
-                    if sv.name.lower() == "temperature":
-                        sv.value = epi_temp
-                        break
+                if epi_temp is not None:
+                    for sv in self.state_vars:
+                        if sv.name.lower() == "temperature":
+                            sv.value = epi_temp
+                            break
             if self.env.wind_forcing_mode in ("default_series", "time_varying", "constant"):
                 wind_value = self.env.get_wind(t)
-                if wind_value is None:
-                    raise ValueError(
-                        "Wind forcing requires full coverage; "
-                        "provide a time series, default mean value, or constant."
-                    )
-                for sv in self.state_vars:
-                    if sv.name.lower() == "wind loading":
-                        sv.value = wind_value
-                        break
+                if wind_value is not None:
+                    for sv in self.state_vars:
+                        if sv.name.lower() == "wind loading":
+                            sv.value = wind_value
+                            break
             if self.env.light_forcing_mode in ("constant", "mean_range", "time_varying"):
                 light_value = self.env.get_light(t)
-                if light_value is None:
-                    raise ValueError(
-                        "Light forcing requires full coverage; "
-                        "provide a time series, annual mean/range, or constant."
-                    )
-                for sv in self.state_vars:
-                    if sv.name.lower() == "light":
-                        sv.value = light_value
-                        break
+                if light_value is not None:
+                    for sv in self.state_vars:
+                        if sv.name.lower() == "light":
+                            sv.value = light_value
+                            break
             if self.env.ph_forcing_mode in ("constant", "time_varying"):
                 ph_value = self.env.get_ph(t)
-                if ph_value is None:
-                    raise ValueError(
-                        "pH forcing requires full coverage; "
-                        "provide a time series or constant."
-                    )
-                for sv in self.state_vars:
-                    if sv.name.lower() == "ph":
-                        sv.value = ph_value
-                        break
+                if ph_value is not None:
+                    for sv in self.state_vars:
+                        if sv.name.lower() == "ph":
+                            sv.value = ph_value
+                            break
             if self.env.inorganic_solids_mode == "tss":
                 tss_value = self.env.get_tss(t)
-                if tss_value is None:
-                    raise ValueError(
-                        "TSS forcing requires full coverage; "
-                        "provide a time series or constant."
-                    )
-                for sv in self.state_vars:
-                    name = sv.name.lower()
-                    if name == "tss" or ("susp" in name and "solid" in name) or "total suspended" in name:
-                        sv.value = tss_value
-                        break
+                if tss_value is not None:
+                    for sv in self.state_vars:
+                        name = sv.name.lower()
+                        if name == "tss" or ("susp" in name and "solid" in name) or "total suspended" in name:
+                            sv.value = tss_value
+                            break
 
             # 1) integrate biological/chemical compartments
             self.solver.integrate(self.state_vars, self.env, t, dt_days)
@@ -400,10 +401,17 @@ class Simulation:
 
             # 3) record outputs
             snapshot = {sv.name: sv.value for sv in self.state_vars}
+            snapshot["volume_m3"] = self.env.volume
+            snapshot["inflow_m3_per_day"] = inflow
+            snapshot["outflow_m3_per_day"] = outflow
             if self.env.temp_forcing_mode in ("series", "series_interpolate", "mean_range", "constant"):
                 snapshot["Temperature_Epilimnion"] = epi_temp
                 snapshot["Temperature_Hypolimnion"] = hypo_temp
                 snapshot["Temperature_Stratified"] = stratified
+            snapshot["wind_m_s"] = wind_value
+            snapshot["light_ly_d"] = light_value
+            snapshot["ph"] = ph_value
+            snapshot["tss_mg_l"] = tss_value
             self._outputs.append((t, snapshot))
 
             # 4) advance time

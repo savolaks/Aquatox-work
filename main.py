@@ -2,7 +2,7 @@ import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from aquatox.core import simulate_water_volume, Simulation, ODESolver
+from aquatox.core import Simulation, ODESolver
 from aquatox.excel_utils import write_excel
 from aquatox.io_utils import ScenarioIO
 from aquatox.state import Biota
@@ -107,7 +107,9 @@ def main() -> None:
     if start > end:
         raise ValueError("Start date must be on or before end date.")
 
-    results = simulate_water_volume(env, time_start=start, time_end=end, dt_days=args.dt)
+    simulation = Simulation(env=env, state_vars=state_vars, solver=ODESolver(method="Euler"))
+    simulation.run(time_end=end, dt_days=args.dt, time_start=start)
+    results = simulation.output_results()
     print("Final volume (m^3):", env.volume)
     print(f"Simulated steps: {len(results)}")
 
@@ -138,7 +140,7 @@ def main() -> None:
                 (
                     t,
                     {
-                        "volume_m3": snapshot.get("volume_m3"),
+                        "volume_m3": snapshot.get("volume_m3", env.volume),
                         "inflow_m3_per_day": snapshot.get("inflow_m3_per_day"),
                         "outflow_m3_per_day": snapshot.get("outflow_m3_per_day"),
                         "temp_epi_degC": temp_epi,
