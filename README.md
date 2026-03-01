@@ -139,9 +139,7 @@ manual guidance. See:
 - `user-s-manual-3-1.pdf`
 
 ## Current Limitations
-- Only Euler integration is implemented.
 - The Euler solver has not been meaningfully tested in this branch because
   the current state-variable rates are placeholders and do not yet exercise
   the solver with dynamic processes.
 - Many biological/chemical process rates are placeholders.
-- Export is intentionally limited to one output mode at a time.
