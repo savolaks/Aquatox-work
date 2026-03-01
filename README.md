@@ -27,7 +27,6 @@ The code is intentionally scoped and stable for batch runs and inspection.
 
 ### Simulation Core
 - `Environment`, `Simulation`, and `ODESolver` are implemented.
-- Euler integration is used for the state-variable solver.
 - Water balance is updated using inflow/outflow each time step.
 - Forcing values are injected into state variables where appropriate.
 
