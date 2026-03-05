@@ -43,6 +43,15 @@ def _normalize_matrix(matrix):
     return normalized
 
 
+def _print_state_variables_initialized(state_vars) -> None:
+    print("State variables initialized:")
+    if not state_vars:
+        print("  (none)")
+        return
+    for sv in state_vars:
+        print(f"  {sv.name} = {sv.value} [{sv.units}]")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Simulate AQUATOX and export either all variables to CSV or the food web to Excel."
@@ -96,6 +105,7 @@ def main() -> None:
     print(f"  tss_forcing_mode = {env.tss_forcing_mode}")
     print(f"  inorganic_solids_mode = {env.inorganic_solids_mode}")
     print(f"  food_web loaded = {env.food_web is not None}")
+    _print_state_variables_initialized(state_vars)
 
     series_keys = set(env.inflow_series.keys()) | set(env.outflow_series.keys())
     if not series_keys:

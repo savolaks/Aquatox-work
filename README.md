@@ -1,12 +1,11 @@
 # AQUATOX Python (savolainen2026)
 
 This branch provides a focused, working AQUATOX implementation centered on
-scenario parsing, forcing series handling, water-balance simulation, and
-two export pathways:
+scenario parsing, forcing handling, water-balance simulation, and two export pathways:
 1) all simulation variables to CSV, or
 2) food web matrices to Excel.
 
-The code is intentionally scoped and stable for batch runs and inspection.
+The code is intentionally scoped and stable for iterative runs and inspection.
 
 ## Features Included
 
@@ -16,14 +15,14 @@ The code is intentionally scoped and stable for batch runs and inspection.
   - lake volume, surface area, mean depth, max depth
 - Parses inflow/outflow series and supports cyclic interpolation when the time
   range extends beyond available data.
-- Supports forcing series and constants for:
+- Supports forcing modes (constant, time-varying series, or seasonal/default where available) for:
   - temperature (epilimnion/hypolimnion)
   - wind
   - light
   - pH
   - TSS (total suspended solids)
-- Interactive prompts are used only when a required value is missing from
-  the scenario file.
+- Interactive prompts are used for forcing mode selection and for missing
+  required values.
 
 ### Simulation Core
 - `Environment`, `Simulation`, and `ODESolver` are implemented.
@@ -142,4 +141,5 @@ manual guidance. See:
 - The Euler solver has not been meaningfully tested in this branch because
   the current state-variable rates are placeholders and do not yet exercise
   the solver with dynamic processes.
+- Only water-balance behavior has been tested.
 - Many biological/chemical process rates are placeholders.
